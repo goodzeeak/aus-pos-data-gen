@@ -9,7 +9,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Dict, Any
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from .config import GSTConfiguration
 
 
@@ -92,23 +92,25 @@ class Customer(BaseModel):
     postcode: Optional[str] = Field(None, description="Postcode")
     customer_abn: Optional[str] = Field(None, description="ABN for business customers")
 
-    @validator("customer_abn")
-    def validate_customer_abn(cls, v, values):
-        """Validate customer ABN for business customers."""
-        if values.get("customer_type") == "BUSINESS" and v is None:
+    @model_validator(mode='after')
+    def validate_customer_data(self):
+        """Validate customer data including ABN requirements."""
+        if self.customer_type == "BUSINESS" and self.customer_abn is None:
             raise ValueError("Business customers must have an ABN")
-        return v
+        return self
 
-    @validator("postcode")
-    def validate_postcode(cls, v, values):
+    @field_validator("postcode")
+    @classmethod
+    def validate_postcode(cls, v):
         """Validate postcode format for Australian addresses."""
         if v is not None:
             if not v.isdigit() or len(v) != 4:
                 raise ValueError("Australian postcodes must be 4 digits")
         return v
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class Business(BaseModel):
@@ -129,29 +131,40 @@ class Business(BaseModel):
     pos_system_type: str = Field(default="Square", description="POS system type")
     terminal_count: int = Field(default=1, description="Number of POS terminals")
 
-    @validator("abn")
+    @field_validator("abn")
+    @classmethod
     def validate_abn_format(cls, v):
         """Validate ABN format (11 digits)."""
-        if len(v.replace(" ", "")) != 11:
+        clean_abn = v.replace(" ", "")
+        if len(clean_abn) != 11:
             raise ValueError("ABN must be 11 digits")
+        if not clean_abn.isdigit():
+            raise ValueError("ABN must contain only digits")
         return v
 
-    @validator("acn")
+    @field_validator("acn")
+    @classmethod
     def validate_acn_format(cls, v):
         """Validate ACN format if provided (9 digits)."""
-        if v is not None and len(v.replace(" ", "")) != 9:
-            raise ValueError("ACN must be 9 digits")
+        if v is not None:
+            clean_acn = v.replace(" ", "")
+            if len(clean_acn) != 9:
+                raise ValueError("ACN must be 9 digits")
+            if not clean_acn.isdigit():
+                raise ValueError("ACN must contain only digits")
         return v
 
-    @validator("postcode")
+    @field_validator("postcode")
+    @classmethod
     def validate_postcode(cls, v):
         """Validate Australian postcode."""
         if not v.isdigit() or len(v) != 4:
             raise ValueError("Postcode must be 4 digits")
         return v
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class TransactionItem(BaseModel):
@@ -177,22 +190,25 @@ class TransactionItem(BaseModel):
     discount_type: str = Field(default="NONE", description="Discount type")
     promotion_id: Optional[str] = Field(None, description="Promotion identifier")
 
-    @validator("quantity")
+    @field_validator("quantity")
+    @classmethod
     def validate_quantity(cls, v):
         """Ensure quantity is positive."""
         if v <= 0:
             raise ValueError("Quantity must be positive")
         return v
 
-    @validator("unit_price_ex_gst", "unit_price_inc_gst")
+    @field_validator("unit_price_ex_gst", "unit_price_inc_gst")
+    @classmethod
     def validate_prices(cls, v):
         """Ensure prices are non-negative."""
         if v < 0:
             raise ValueError("Prices cannot be negative")
         return v
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class Transaction(BaseModel):
@@ -220,34 +236,32 @@ class Transaction(BaseModel):
     business_abn: str = Field(..., description="Business ABN")
     items: List[TransactionItem] = Field(default_factory=list, description="Transaction line items")
 
-    @validator("total_inc_gst")
+    @field_validator("total_inc_gst")
+    @classmethod
     def validate_total_amount(cls, v):
         """Ensure total is reasonable."""
         if v <= 0:
             raise ValueError("Total amount must be positive")
         return v
 
-    @validator("tender_amount")
-    def validate_tender_amount(cls, v, values):
-        """Ensure tender amount is sufficient."""
-        total = values.get("total_inc_gst")
-        if total is not None and v < total:
-            raise ValueError("Tender amount must be at least the total amount")
-        return v
+    @model_validator(mode='after')
+    def validate_payment_amounts(self):
+        """Validate tender and change amounts."""
+        if self.tender_amount is not None and self.total_inc_gst is not None:
+            if self.tender_amount < self.total_inc_gst:
+                raise ValueError("Tender amount must be at least the total amount")
 
-    @validator("change_amount")
-    def calculate_change_amount(cls, v, values):
-        """Calculate change amount automatically."""
-        tender = values.get("tender_amount")
-        total = values.get("total_inc_gst")
-        if tender is not None and total is not None:
-            calculated_change = tender - total
-            if v != calculated_change:
-                return calculated_change
-        return v
+        # Calculate change amount automatically
+        if self.tender_amount is not None and self.total_inc_gst is not None:
+            calculated_change = self.tender_amount - self.total_inc_gst
+            if self.change_amount != calculated_change:
+                self.change_amount = calculated_change
 
-    class Config:
-        use_enum_values = True
+        return self
+
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class ReturnTransaction(BaseModel):
@@ -269,15 +283,17 @@ class ReturnTransaction(BaseModel):
     condition_code: str = Field(default="NEW", description="Item condition")
     original_purchase_date: Optional[datetime] = Field(None, description="Original purchase date")
 
-    @validator("refund_amount")
+    @field_validator("refund_amount")
+    @classmethod
     def validate_refund_amount(cls, v):
         """Ensure refund amount is positive."""
         if v <= 0:
             raise ValueError("Refund amount must be positive")
         return v
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class GSTCalculation(BaseModel):

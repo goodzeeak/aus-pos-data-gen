@@ -8,7 +8,7 @@ using Pydantic for type safety and settings validation.
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
@@ -157,7 +157,8 @@ class DatabaseConfig(BaseModel):
     ssl_cert: Optional[str] = Field(default=None, description="SSL certificate path")
     ssl_key: Optional[str] = Field(default=None, description="SSL key path")
 
-    @validator("db_type")
+    @field_validator("db_type")
+    @classmethod
     def validate_db_type(cls, v):
         """Validate database type."""
         valid_types = {"sqlite", "postgresql", "mysql", "mariadb"}
@@ -165,7 +166,8 @@ class DatabaseConfig(BaseModel):
             raise ValueError(f"db_type must be one of: {', '.join(valid_types)}")
         return v.lower()
 
-    @validator("port")
+    @field_validator("port")
+    @classmethod
     def validate_port(cls, v):
         """Validate port number."""
         if v is not None and (v < 1 or v > 65535):
@@ -323,7 +325,8 @@ class POSGeneratorConfig(BaseModel):
     )
 
     # Validation
-    @validator("abn")
+    @field_validator("abn")
+    @classmethod
     def validate_abn(cls, v):
         """Validate ABN format if provided."""
         if v is not None:
@@ -331,17 +334,18 @@ class POSGeneratorConfig(BaseModel):
                 raise ValueError("ABN must be 11 digits")
         return v
 
-    @validator("start_date", "end_date")
-    def validate_dates(cls, v):
+    @model_validator(mode='after')
+    def validate_dates(self):
         """Ensure end date is after start date."""
-        if hasattr(cls, "end_date") and v >= cls.end_date:
-            raise ValueError("Start date must be before end date")
-        return v
+        if self.start_date and self.end_date:
+            if self.start_date >= self.end_date:
+                raise ValueError("Start date must be before end date")
+        return self
 
-    class Config:
-        """Pydantic configuration."""
-        arbitrary_types_allowed = True
-        validate_assignment = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        validate_assignment=True
+    )
 
 
 # Default configuration instance

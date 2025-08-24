@@ -7,6 +7,7 @@ with proper GST calculations, business compliance, and seasonal patterns.
 
 import random
 import uuid
+import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -31,6 +32,9 @@ class POSDataGenerator:
     def __init__(self, config: Optional[POSGeneratorConfig] = None):
         """Initialize the POS data generator with configuration."""
         try:
+            # Configure logging to suppress verbose third-party library messages
+            self._configure_logging()
+
             self.config = config or POSGeneratorConfig()
             self.faker = Faker(self.config.locale)
             self.faker.seed_instance(self.config.seed)
@@ -49,10 +53,99 @@ class POSDataGenerator:
             # Product catalog
             self.product_catalog = self._generate_product_catalog()
 
-            logger.info("Initialized POS Data Generator with seed: {}", self.config.seed)
+            # Console for formatted output
+            self._console = Console()
+
+            logger.debug("Initialized POS Data Generator with seed: {}", self.config.seed)
         except Exception as e:
             logger.error("Error initializing POS Data Generator: {}", e)
             raise
+
+    def _configure_logging(self):
+        """Configure logging to suppress verbose third-party library messages."""
+        # Suppress verbose Faker debug messages that clutter the output
+        logging.getLogger('faker.factory').setLevel(logging.WARNING)
+        logging.getLogger('faker').setLevel(logging.WARNING)
+
+        # Suppress other potentially verbose third-party libraries
+        logging.getLogger('urllib3').setLevel(logging.WARNING)
+
+        # Note: This keeps our application logs clean while still allowing
+        # users to enable DEBUG level for our code if needed
+        logger.debug("Logging configured - verbose third-party messages suppressed")
+
+    def _format_business_debug(self, business_data: Dict, business_num: int) -> str:
+        """Format business data for readable debug output."""
+        from rich.table import Table
+        from io import StringIO
+
+        # Create a temporary console to capture the table output
+        temp_console = Console(file=StringIO(), width=100, force_terminal=True)
+
+        table = Table(title=f"🏪 Business #{business_num}: {business_data['business_name']}", show_header=False, show_edge=False, pad_edge=False)
+
+        # Basic Info
+        table.add_row("🔢 Store ID", f"[bold cyan]{business_data['store_id']}[/bold cyan]")
+        table.add_row("🏢 Business Name", f"[bold white]{business_data['business_name']}[/bold white]")
+        table.add_row("📄 ABN", f"[green]{business_data['abn']}[/green]")
+
+        # Address Info
+        address = f"{business_data['store_address']}, {business_data['suburb']} {business_data['state'].value} {business_data['postcode']}"
+        table.add_row("📍 Address", f"[dim]{address}[/dim]")
+
+        # Contact Info
+        table.add_row("📞 Phone", f"[blue]{business_data['phone']}[/blue]")
+        table.add_row("✉️ Email", f"[blue]{business_data['email']}[/blue]")
+
+        # Business Details
+        table.add_row("💰 GST Registered", f"[{'green' if business_data['gst_registered'] else 'red'}]{business_data['gst_registered']}[/]")
+        table.add_row("🖥️ POS System", f"[yellow]{business_data['pos_system_type']}[/yellow]")
+        table.add_row("🔌 Terminals", f"[magenta]{business_data['terminal_count']}[/magenta]")
+
+        # Render the table to string
+        temp_console.print(table)
+        return temp_console.file.getvalue()
+
+    def _format_customer_debug(self, customer_data: Dict, customer_num: int) -> str:
+        """Format customer data for readable debug output."""
+        from rich.table import Table
+        from io import StringIO
+
+        # Create a temporary console to capture the table output
+        temp_console = Console(file=StringIO(), width=100, force_terminal=True)
+
+        table = Table(title=f"👤 Customer #{customer_num}: {customer_data['customer_type'].value}", show_header=False, show_edge=False, pad_edge=False)
+
+        # Basic Info
+        table.add_row("🔢 Customer ID", f"[bold cyan]{customer_data['customer_id']}[/bold cyan]")
+        table.add_row("👤 Customer Type", f"[bold white]{customer_data['customer_type'].value}[/bold white]")
+
+        # Personal Info
+        if 'first_name' in customer_data:
+            table.add_row("👤 Name", f"[white]{customer_data['first_name']} {customer_data['last_name']}[/white]")
+        if 'company_name' in customer_data:
+            table.add_row("🏢 Company", f"[white]{customer_data['company_name']}[/white]")
+        if 'customer_abn' in customer_data:
+            table.add_row("📄 ABN", f"[green]{customer_data['customer_abn']}[/green]")
+
+        # Address Info
+        if 'customer_address' in customer_data:
+            address = f"{customer_data['customer_address']}, {customer_data['suburb']} {customer_data['state'].value} {customer_data['postcode']}"
+            table.add_row("📍 Address", f"[dim]{address}[/dim]")
+
+        # Contact Info
+        if 'phone' in customer_data:
+            table.add_row("📞 Phone", f"[blue]{customer_data['phone']}[/blue]")
+        if 'email' in customer_data:
+            table.add_row("✉️ Email", f"[blue]{customer_data['email']}[/blue]")
+
+        # Customer Details
+        if 'loyalty_member' in customer_data:
+            table.add_row("⭐ Loyalty Member", f"[{'green' if customer_data['loyalty_member'] else 'red'}]{customer_data['loyalty_member']}[/]")
+
+        # Render the table to string
+        temp_console.print(table)
+        return temp_console.file.getvalue()
 
     def _generate_product_catalog(self) -> Dict[str, Dict]:
         """Generate a realistic Australian retail product catalog."""
@@ -153,9 +246,9 @@ class POSDataGenerator:
             },
         }
 
-    def generate_businesses(self, count: int = 5, progress_callback=None) -> List[Business]:
+    def generate_businesses(self, count: int = 5, progress_callback=None, debug: bool = False) -> List[Business]:
         """Generate Australian businesses with proper ABNs."""
-        logger.info("Generating {} businesses", count)
+        logger.debug("Generating {} businesses", count)
         businesses = []
 
         for i in range(count):
@@ -191,10 +284,16 @@ class POSDataGenerator:
                     "terminal_count": random.randint(1, 5)
                 }
 
-                logger.debug(f"Creating business with data: {business_data}")
+                # Only show debug formatting if explicitly requested
+                if debug:
+                    formatted_business = self._format_business_debug(business_data, i+1)
+                    logger.info(formatted_business)
+
                 business = Business(**business_data)
                 businesses.append(business)
-                logger.debug(f"Generated business {i+1}: {business.business_name}")
+
+                # Log with plain text, no console output during CLI operations
+                logger.debug("Generated business {}: {}", i+1, business.business_name)
 
                 # Update progress if callback provided
                 if progress_callback:
@@ -205,12 +304,12 @@ class POSDataGenerator:
                 raise
 
         self.businesses = businesses
-        logger.info("Generated {} businesses", len(businesses))
+        logger.debug("Generated {} businesses", len(businesses))
         return businesses
 
-    def generate_customers(self, count: int = 1000, progress_callback=None) -> List[Customer]:
+    def generate_customers(self, count: int = 1000, progress_callback=None, debug: bool = False) -> List[Customer]:
         """Generate Australian customers with realistic demographics."""
-        logger.info("Generating {} customers", count)
+        logger.debug("Generating {} customers", count)
         customers = []
 
         for i in range(count):
@@ -256,7 +355,7 @@ class POSDataGenerator:
                 progress_callback()
 
         self.customers = customers
-        logger.info("Generated {} customers", len(customers))
+        logger.debug("Generated {} customers", len(customers))
         return customers
 
     def generate_transaction_date_range(self) -> Iterator[datetime]:
@@ -327,7 +426,7 @@ class POSDataGenerator:
 
         # Select customer (some transactions are cash/anonymous)
         customer = None
-        if random.random() < 0.7:  # 70% have customer data
+        if random.random() < 0.7 and self.customers:  # 70% have customer data if customers exist
             customer = random.choice(self.customers)
 
         # Generate line items
@@ -435,43 +534,76 @@ class POSDataGenerator:
         else:
             return amount + (Decimal("0.05") - remainder)
 
-    def generate_all_data(self, business_count: int = 5, customer_count: int = 1000) -> Dict:
+    def generate_all_data(self, business_count: int = 5, customer_count: int = 1000, show_progress: bool = False, debug: bool = False) -> Dict:
         """Generate complete dataset with businesses, customers, and transactions."""
-        logger.info("Starting complete data generation...")
+        logger.debug("Starting complete data generation...")
 
-        # Use Rich progress bars for visual feedback
-        console = Console()
-        with Progress(
-            TextColumn("[bold blue]{task.description}[/bold blue]"),
-            BarColumn(complete_style="green"),
-            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            TimeRemainingColumn(),
-            console=console,
-            auto_refresh=True,
-            refresh_per_second=10
-        ) as progress:
-            # Generate businesses
-            business_task = progress.add_task("Generating businesses...", total=business_count)
-            self.generate_businesses(business_count, lambda: progress.update(business_task, advance=1))
+        if show_progress:
+            # Use Rich progress bars for visual feedback
+            logger.debug("Using progress bar mode")
+            console = Console()
+            with Progress(
+                TextColumn("[bold blue]{task.description}[/bold blue]"),
+                BarColumn(complete_style="green"),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+                console=console,
+                auto_refresh=True,
+                refresh_per_second=10
+            ) as progress:
+                return self._generate_with_progress(business_count, customer_count, progress, debug)
+        else:
+            # Generate without progress bars - suppress detailed logs for cleaner CLI
+            return self._generate_without_progress(business_count, customer_count, debug)
 
-            # Generate customers
-            customer_task = progress.add_task("Generating customers...", total=customer_count)
-            self.generate_customers(customer_count, lambda: progress.update(customer_task, advance=1))
+    def _generate_with_progress(self, business_count: int, customer_count: int, progress, debug: bool = False) -> Dict:
+        """Generate data with progress bars."""
+        # Generate businesses
+        business_task = progress.add_task("Generating businesses...", total=business_count)
+        self.generate_businesses(business_count, lambda: progress.update(business_task, advance=1), debug=debug)
 
-            # Generate transactions for each business and date
-            total_dates = sum(1 for _ in self.generate_transaction_date_range())
-            transaction_task = progress.add_task("Generating transactions...", total=total_dates * len(self.businesses))
+        # Generate customers
+        customer_task = progress.add_task("Generating customers...", total=customer_count)
+        self.generate_customers(customer_count, lambda: progress.update(customer_task, advance=1), debug=debug)
 
-            self.transactions = []
-            for business in self.businesses:
-                for date in self.generate_transaction_date_range():
-                    daily_transactions = self.generate_daily_transactions(business, date)
-                    self.transactions.extend(daily_transactions)
-                    progress.update(transaction_task, advance=1)
+        # Generate transactions for each business and date
+        total_dates = sum(1 for _ in self.generate_transaction_date_range())
+        transaction_task = progress.add_task("Generating transactions...", total=total_dates * len(self.businesses))
+
+        self.transactions = []
+        for business in self.businesses:
+            for date in self.generate_transaction_date_range():
+                daily_transactions = self.generate_daily_transactions(business, date)
+                self.transactions.extend(daily_transactions)
+                progress.update(transaction_task, advance=1)
 
         # Generate returns
-        self._generate_returns()
+        self._generate_returns(debug=debug)
 
+        return self._build_result()
+    
+    def _generate_without_progress(self, business_count: int, customer_count: int, debug: bool = False) -> Dict:
+        """Generate data without progress bars."""
+        # Generate businesses
+        self.generate_businesses(business_count, debug=debug)
+
+        # Generate customers
+        self.generate_customers(customer_count, debug=debug)
+
+        # Generate transactions for each business and date
+        self.transactions = []
+        for business in self.businesses:
+            for date in self.generate_transaction_date_range():
+                daily_transactions = self.generate_daily_transactions(business, date)
+                self.transactions.extend(daily_transactions)
+
+        # Generate returns
+        self._generate_returns(debug=debug)
+
+        return self._build_result()
+    
+    def _build_result(self) -> Dict:
+        """Build the result dictionary."""
         result = {
             "businesses": self.businesses,
             "customers": self.customers,
@@ -488,17 +620,18 @@ class POSDataGenerator:
                 }
             }
         }
-
-        logger.info("Data generation completed!")
-        logger.info("Summary: {} businesses, {} customers, {} transactions, {} returns",
-                   len(self.businesses), len(self.customers),
-                   len(self.transactions), len(self.returns))
-
+        
+        # Only log summary in debug mode to keep CLI clean
+        logger.debug("Data generation completed!")
+        logger.debug("Summary: {} businesses, {} customers, {} transactions, {} returns",
+                    len(self.businesses), len(self.customers),
+                    len(self.transactions), len(self.returns))
+        
         return result
 
-    def _generate_returns(self):
+    def _generate_returns(self, debug: bool = False):
         """Generate return transactions based on return rates."""
-        logger.info("Generating return transactions...")
+        logger.debug("Generating return transactions...")
         returns = []
 
         for transaction in self.transactions:
@@ -509,7 +642,7 @@ class POSDataGenerator:
                     returns.append(return_transaction)
 
         self.returns = returns
-        logger.info("Generated {} return transactions", len(returns))
+        logger.debug("Generated {} return transactions", len(returns))
 
     def _generate_return(self, original_transaction: Transaction, item: TransactionItem) -> ReturnTransaction:
         """Generate a return transaction for a specific item."""
@@ -554,14 +687,14 @@ class POSDataGenerator:
 
         # Export businesses
         if self.businesses:
-            businesses_df = pd.DataFrame([b.dict() for b in self.businesses])
+            businesses_df = pd.DataFrame([b.model_dump() for b in self.businesses])
             businesses_file = output_dir / "businesses.csv"
             businesses_df.to_csv(businesses_file, index=False)
             exported_files["businesses"] = businesses_file
 
         # Export customers
         if self.customers:
-            customers_df = pd.DataFrame([c.dict() for c in self.customers])
+            customers_df = pd.DataFrame([c.model_dump() for c in self.customers])
             customers_file = output_dir / "customers.csv"
             customers_df.to_csv(customers_file, index=False)
             exported_files["customers"] = customers_file
@@ -570,8 +703,8 @@ class POSDataGenerator:
         if self.transactions:
             transactions_data = []
             for transaction in self.transactions:
-                tx_dict = transaction.dict()
-                tx_dict["items"] = [item.dict() for item in transaction.items]
+                tx_dict = transaction.model_dump()
+                tx_dict["items"] = [item.model_dump() for item in transaction.items]
                 transactions_data.append(tx_dict)
 
             transactions_df = pd.DataFrame(transactions_data)
@@ -581,12 +714,12 @@ class POSDataGenerator:
 
         # Export returns
         if self.returns:
-            returns_df = pd.DataFrame([r.dict() for r in self.returns])
+            returns_df = pd.DataFrame([r.model_dump() for r in self.returns])
             returns_file = output_dir / "returns.csv"
             returns_df.to_csv(returns_file, index=False)
             exported_files["returns"] = returns_file
 
-        logger.info("Exported data to: {}", output_dir)
+        logger.debug("Exported data to: {}", output_dir)
         return exported_files
 
     def export_line_items(self, output_dir: Optional[Path] = None) -> Path:
@@ -599,13 +732,13 @@ class POSDataGenerator:
         line_items_data = []
         for transaction in self.transactions:
             for item in transaction.items:
-                line_items_data.append(item.dict())
+                line_items_data.append(item.model_dump())
 
         line_items_df = pd.DataFrame(line_items_data)
         line_items_file = output_dir / "transaction_items.csv"
         line_items_df.to_csv(line_items_file, index=False)
 
-        logger.info("Exported line items to: {}", line_items_file)
+        logger.debug("Exported line items to: {}", line_items_file)
         return line_items_file
 
     def export_to_json(self, output_dir: Optional[Path] = None) -> Dict[str, Path]:
@@ -619,7 +752,7 @@ class POSDataGenerator:
 
         # Export businesses
         if self.businesses:
-            businesses_data = [b.dict() for b in self.businesses]
+            businesses_data = [b.model_dump() for b in self.businesses]
             businesses_file = output_dir / "businesses.json"
             with open(businesses_file, 'w') as f:
                 json.dump(businesses_data, f, indent=2, default=str)
@@ -627,7 +760,7 @@ class POSDataGenerator:
 
         # Export customers
         if self.customers:
-            customers_data = [c.dict() for c in self.customers]
+            customers_data = [c.model_dump() for c in self.customers]
             customers_file = output_dir / "customers.json"
             with open(customers_file, 'w') as f:
                 json.dump(customers_data, f, indent=2, default=str)
@@ -637,8 +770,8 @@ class POSDataGenerator:
         if self.transactions:
             transactions_data = []
             for transaction in self.transactions:
-                tx_dict = transaction.dict()
-                tx_dict["items"] = [item.dict() for item in transaction.items]
+                tx_dict = transaction.model_dump()
+                tx_dict["items"] = [item.model_dump() for item in transaction.items]
                 transactions_data.append(tx_dict)
 
             transactions_file = output_dir / "transactions.json"
@@ -648,13 +781,13 @@ class POSDataGenerator:
 
         # Export returns
         if self.returns:
-            returns_data = [r.dict() for r in self.returns]
+            returns_data = [r.model_dump() for r in self.returns]
             returns_file = output_dir / "returns.json"
             with open(returns_file, 'w') as f:
                 json.dump(returns_data, f, indent=2, default=str)
             exported_files["returns"] = returns_file
 
-        logger.info("Exported data to JSON files in: {}", output_dir)
+        logger.debug("Exported data to JSON files in: {}", output_dir)
         return exported_files
 
     def export_to_excel(self, output_dir: Optional[Path] = None) -> Dict[str, Path]:
@@ -670,20 +803,20 @@ class POSDataGenerator:
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
             # Export businesses
             if self.businesses:
-                businesses_df = pd.DataFrame([b.dict() for b in self.businesses])
+                businesses_df = pd.DataFrame([b.model_dump() for b in self.businesses])
                 businesses_df.to_excel(writer, sheet_name='Businesses', index=False)
 
             # Export customers
             if self.customers:
-                customers_df = pd.DataFrame([c.dict() for c in self.customers])
+                customers_df = pd.DataFrame([c.model_dump() for c in self.customers])
                 customers_df.to_excel(writer, sheet_name='Customers', index=False)
 
             # Export transactions
             if self.transactions:
                 transactions_data = []
                 for transaction in self.transactions:
-                    tx_dict = transaction.dict()
-                    tx_dict["items"] = [item.dict() for item in transaction.items]
+                    tx_dict = transaction.model_dump()
+                    tx_dict["items"] = [item.model_dump() for item in transaction.items]
                     transactions_data.append(tx_dict)
 
                 transactions_df = pd.DataFrame(transactions_data)
@@ -691,7 +824,7 @@ class POSDataGenerator:
 
             # Export returns
             if self.returns:
-                returns_df = pd.DataFrame([r.dict() for r in self.returns])
+                returns_df = pd.DataFrame([r.model_dump() for r in self.returns])
                 returns_df.to_excel(writer, sheet_name='Returns', index=False)
 
             # Export line items separately
@@ -699,12 +832,12 @@ class POSDataGenerator:
                 line_items_data = []
                 for transaction in self.transactions:
                     for item in transaction.items:
-                        line_items_data.append(item.dict())
+                        line_items_data.append(item.model_dump())
 
                 line_items_df = pd.DataFrame(line_items_data)
                 line_items_df.to_excel(writer, sheet_name='Line_Items', index=False)
 
-        logger.info("Exported data to Excel file: {}", excel_file)
+        logger.debug("Exported data to Excel file: {}", excel_file)
         return exported_files
 
     def export_to_parquet(self, output_dir: Optional[Path] = None) -> Dict[str, Path]:
@@ -718,14 +851,14 @@ class POSDataGenerator:
 
         # Export businesses
         if self.businesses:
-            businesses_df = pd.DataFrame([b.dict() for b in self.businesses])
+            businesses_df = pd.DataFrame([b.model_dump() for b in self.businesses])
             businesses_file = output_dir / "businesses.parquet"
             businesses_df.to_parquet(businesses_file, index=False)
             exported_files["businesses"] = businesses_file
 
         # Export customers
         if self.customers:
-            customers_df = pd.DataFrame([c.dict() for c in self.customers])
+            customers_df = pd.DataFrame([c.model_dump() for c in self.customers])
             customers_file = output_dir / "customers.parquet"
             customers_df.to_parquet(customers_file, index=False)
             exported_files["customers"] = customers_file
@@ -734,8 +867,8 @@ class POSDataGenerator:
         if self.transactions:
             transactions_data = []
             for transaction in self.transactions:
-                tx_dict = transaction.dict()
-                tx_dict["items"] = [item.dict() for item in transaction.items]
+                tx_dict = transaction.model_dump()
+                tx_dict["items"] = [item.model_dump() for item in transaction.items]
                 transactions_data.append(tx_dict)
 
             transactions_df = pd.DataFrame(transactions_data)
@@ -745,12 +878,12 @@ class POSDataGenerator:
 
         # Export returns
         if self.returns:
-            returns_df = pd.DataFrame([r.dict() for r in self.returns])
+            returns_df = pd.DataFrame([r.model_dump() for r in self.returns])
             returns_file = output_dir / "returns.parquet"
             returns_df.to_parquet(returns_file, index=False)
             exported_files["returns"] = returns_file
 
-        logger.info("Exported data to Parquet files in: {}", output_dir)
+        logger.debug("Exported data to Parquet files in: {}", output_dir)
         return exported_files
 
     def export_to_sqlite(self, output_dir: Optional[Path] = None) -> Path:
@@ -769,20 +902,20 @@ class POSDataGenerator:
         try:
             # Export businesses
             if self.businesses:
-                businesses_df = pd.DataFrame([b.dict() for b in self.businesses])
+                businesses_df = pd.DataFrame([b.model_dump() for b in self.businesses])
                 businesses_df.to_sql('businesses', conn, if_exists='replace', index=False)
 
             # Export customers
             if self.customers:
-                customers_df = pd.DataFrame([c.dict() for c in self.customers])
+                customers_df = pd.DataFrame([c.model_dump() for c in self.customers])
                 customers_df.to_sql('customers', conn, if_exists='replace', index=False)
 
             # Export transactions
             if self.transactions:
                 transactions_data = []
                 for transaction in self.transactions:
-                    tx_dict = transaction.dict()
-                    tx_dict["items"] = [item.dict() for item in transaction.items]
+                    tx_dict = transaction.model_dump()
+                    tx_dict["items"] = [item.model_dump() for item in transaction.items]
                     transactions_data.append(tx_dict)
 
                 transactions_df = pd.DataFrame(transactions_data)
@@ -790,7 +923,7 @@ class POSDataGenerator:
 
             # Export returns
             if self.returns:
-                returns_df = pd.DataFrame([r.dict() for r in self.returns])
+                returns_df = pd.DataFrame([r.model_dump() for r in self.returns])
                 returns_df.to_sql('returns', conn, if_exists='replace', index=False)
 
             # Export line items separately
@@ -798,12 +931,12 @@ class POSDataGenerator:
                 line_items_data = []
                 for transaction in self.transactions:
                     for item in transaction.items:
-                        line_items_data.append(item.dict())
+                        line_items_data.append(item.model_dump())
 
                 line_items_df = pd.DataFrame(line_items_data)
                 line_items_df.to_sql('transaction_items', conn, if_exists='replace', index=False)
 
-            logger.info("Exported data to SQLite database: {}", db_file)
+            logger.debug("Exported data to SQLite database: {}", db_file)
 
         finally:
             conn.close()
@@ -817,7 +950,7 @@ class POSDataGenerator:
         from sqlalchemy.dialects.mysql import JSON as MyJSON
         import pandas as pd
 
-        logger.info(f"Exporting data to {db_config.db_type} database...")
+        logger.debug(f"Exporting data to {db_config.db_type} database...")
 
         try:
             # Create database engine
@@ -830,7 +963,7 @@ class POSDataGenerator:
 
             # Test connection
             with engine.connect() as conn:
-                logger.info("✅ Database connection successful")
+                logger.debug("✅ Database connection successful")
 
             # Define table schemas
             metadata = MetaData()
@@ -963,14 +1096,14 @@ class POSDataGenerator:
 
             # Create tables
             metadata.create_all(engine)
-            logger.info("✅ Database tables created successfully")
+            logger.debug("✅ Database tables created successfully")
 
             # Export data using pandas
             exported_tables = {}
 
             # Export businesses
             if self.businesses:
-                businesses_df = pd.DataFrame([b.dict() for b in self.businesses])
+                businesses_df = pd.DataFrame([b.model_dump() for b in self.businesses])
                 businesses_df.to_sql(
                     businesses_table.name,
                     engine,
@@ -979,11 +1112,11 @@ class POSDataGenerator:
                     schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
                 )
                 exported_tables['businesses'] = businesses_table.name
-                logger.info(f"✅ Exported {len(businesses_df)} businesses")
+                logger.debug(f"✅ Exported {len(businesses_df)} businesses")
 
             # Export customers
             if self.customers:
-                customers_df = pd.DataFrame([c.dict() for c in self.customers])
+                customers_df = pd.DataFrame([c.model_dump() for c in self.customers])
                 customers_df.to_sql(
                     customers_table.name,
                     engine,
@@ -992,14 +1125,14 @@ class POSDataGenerator:
                     schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
                 )
                 exported_tables['customers'] = customers_table.name
-                logger.info(f"✅ Exported {len(customers_df)} customers")
+                logger.debug(f"✅ Exported {len(customers_df)} customers")
 
             # Export transactions
             if self.transactions:
                 transactions_data = []
                 for transaction in self.transactions:
-                    tx_dict = transaction.dict()
-                    tx_dict["items"] = [item.dict() for item in transaction.items]
+                    tx_dict = transaction.model_dump()
+                    tx_dict["items"] = [item.model_dump() for item in transaction.items]
                     transactions_data.append(tx_dict)
 
                 transactions_df = pd.DataFrame(transactions_data)
@@ -1011,14 +1144,14 @@ class POSDataGenerator:
                     schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
                 )
                 exported_tables['transactions'] = transactions_table.name
-                logger.info(f"✅ Exported {len(transactions_df)} transactions")
+                logger.debug(f"✅ Exported {len(transactions_df)} transactions")
 
             # Export transaction items
             if self.transactions:
                 line_items_data = []
                 for transaction in self.transactions:
                     for item in transaction.items:
-                        line_items_data.append(item.dict())
+                        line_items_data.append(item.model_dump())
 
                 line_items_df = pd.DataFrame(line_items_data)
                 line_items_df.to_sql(
@@ -1029,11 +1162,11 @@ class POSDataGenerator:
                     schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
                 )
                 exported_tables['transaction_items'] = transaction_items_table.name
-                logger.info(f"✅ Exported {len(line_items_df)} transaction items")
+                logger.debug(f"✅ Exported {len(line_items_df)} transaction items")
 
             # Export returns
             if self.returns:
-                returns_df = pd.DataFrame([r.dict() for r in self.returns])
+                returns_df = pd.DataFrame([r.model_dump() for r in self.returns])
                 returns_df.to_sql(
                     returns_table.name,
                     engine,
@@ -1042,12 +1175,12 @@ class POSDataGenerator:
                     schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
                 )
                 exported_tables['returns'] = returns_table.name
-                logger.info(f"✅ Exported {len(returns_df)} returns")
+                logger.debug(f"✅ Exported {len(returns_df)} returns")
 
             # Close engine
             engine.dispose()
 
-            logger.info("✅ Database export completed successfully")
+            logger.debug("✅ Database export completed successfully")
             return exported_tables
 
         except Exception as e:

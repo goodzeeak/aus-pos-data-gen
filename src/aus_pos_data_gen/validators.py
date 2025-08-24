@@ -243,4 +243,4 @@ class ReceiptValidator:
         """Generate properly formatted receipt number."""
         from datetime import datetime
         date_str = datetime.now().strftime("%Y%m%d")
-        return "02d"
+        return f"{store_id}-{date_str}-{sequence:03d}"

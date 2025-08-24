@@ -6,6 +6,7 @@ retail transaction data with proper GST compliance and business rules.
 """
 
 import json
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -35,6 +36,19 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+def safe_convert_param(param, default_value=None):
+    """Convert OptionInfo objects to their actual values."""
+    if param is None:
+        return default_value
+    if hasattr(param, 'default'):
+        result = param.default if param.default is not None else default_value
+        # Convert string paths to Path objects if default is a Path
+        if isinstance(default_value, Path) and isinstance(result, str):
+            return Path(result)
+        return result
+    return param
 
 
 @app.command()
@@ -709,7 +723,8 @@ def interactive():
                 db_password=db_config_dict.get('password'),
                 db_table_prefix=db_config_dict.get('table_prefix', ''),
                 db_schema=db_config_dict.get('db_schema'),
-                verbose=True
+                verbose=True,
+                debug=False
             )
         else:
             # Use file export
@@ -719,7 +734,8 @@ def interactive():
                 days=int(config_answers['days']),
                 seed=int(config_answers['seed']),
                 format=config_answers['format'],
-                verbose=True
+                verbose=True,
+                debug=False
             )
 
     elif operation_answers['operation'] == 'stream':
@@ -821,6 +837,7 @@ def generate(
     seed: int = typer.Option(42, "--seed", "-s", help="Random seed for reproducibility"),
     format: str = typer.Option("csv", "--format", "-f", help="Export format: csv, json, xlsx, parquet, sqlite"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+    debug: bool = typer.Option(False, "--debug", help="Show detailed debug information during generation"),
 
     # Database options
     db_type: str = typer.Option("sqlite", "--db-type", help="Database type: sqlite, postgresql, mysql, mariadb"),
@@ -834,6 +851,32 @@ def generate(
     db_schema: Optional[str] = typer.Option(None, "--db-schema", help="Database schema (PostgreSQL)"),
 ):
     """🎯 Generate Australian POS transaction dataset with beautiful progress visualization."""
+    
+    # Configure logging based on debug parameter
+    logger.remove()  # Remove all default handlers
+    if debug:
+        # Enable detailed logging for debug mode
+        logger.add(sys.stderr, level="DEBUG")
+    # Note: If debug=False, no handler is added, so no logging output
+    
+    # Convert parameters safely to handle OptionInfo objects
+    businesses = safe_convert_param(businesses, 5)
+    customers = safe_convert_param(customers, 1000)
+    days = safe_convert_param(days, 365)
+    output_dir = safe_convert_param(output_dir, Path("data/processed"))
+    seed = safe_convert_param(seed, 42)
+    format = safe_convert_param(format, "csv")
+    verbose = safe_convert_param(verbose, False)
+    debug = safe_convert_param(debug, False)
+    db_type = safe_convert_param(db_type, "sqlite")
+    db_host = safe_convert_param(db_host, None)
+    db_port = safe_convert_param(db_port, None)
+    db_name = safe_convert_param(db_name, None)
+    db_username = safe_convert_param(db_username, None)
+    db_password = safe_convert_param(db_password, None)
+    db_connection_string = safe_convert_param(db_connection_string, None)
+    db_table_prefix = safe_convert_param(db_table_prefix, "")
+    db_schema = safe_convert_param(db_schema, None)
 
     # Enhanced welcome message with Rich
     welcome_panel = Panel.fit(
@@ -855,9 +898,9 @@ def generate(
     console.print(welcome_panel)
     console.print()
 
-    # Initialize generator with progress tracking
+    # Initialize generator with simple status indicator
     try:
-        with Status("[bold green]Initializing data generator...[/bold green]", spinner="dots") as status:
+        with console.status("[bold green]Initializing data generator...[/bold green]") as status:
             # Create config with the specified parameters
             config = POSGeneratorConfig(
                 seed=seed,
@@ -867,53 +910,20 @@ def generate(
 
             generator = POSDataGenerator(config=config)
 
-            # Generate businesses and customers with the specified counts
-            businesses_data = generator.generate_businesses(count=businesses)
-            customers_data = generator.generate_customers(count=customers)
-
-            status.update("[bold green]✅ Generator initialized successfully![/bold green]")
-
     except Exception as e:
         console.print(f"[bold red]❌ Error initializing generator:[/bold red] {e}")
         raise typer.Exit(1)
 
-    # Progress tracking for data generation
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(complete_style="green"),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=console,
-        transient=False
-    ) as progress:
-
-        # Main generation task
-        main_task = progress.add_task("[bold cyan]Generating data...[/bold cyan]", total=100)
-
-        try:
-            # Generate businesses with progress
-            business_task = progress.add_task("🏪 Generating businesses...", total=businesses)
-            businesses_data = generator.generate_businesses()
-            progress.update(business_task, completed=businesses)
-            progress.update(main_task, advance=20)
-
-            # Generate customers with progress
-            customer_task = progress.add_task("👥 Generating customers...", total=customers)
-            customers_data = generator.generate_customers()
-            progress.update(customer_task, completed=customers)
-            progress.update(main_task, advance=30)
-
-            # Generate all data using the main method
-            all_data_task = progress.add_task("💳 Generating complete dataset...", total=100)
-
+    # Simple status-based data generation (no progress bars)
+    try:
+        with console.status("[bold green]Generating complete dataset...[/bold green]") as status:
+            # Generate all data using the main method - no progress bars, passes debug parameter
             all_data = generator.generate_all_data(
                 business_count=businesses,
-                customer_count=customers
+                customer_count=customers,
+                show_progress=False,  # Disable progress bars for clean CLI
+                debug=debug  # Pass debug parameter to show detailed business info if requested
             )
-
-            progress.update(all_data_task, completed=100)
-            progress.update(main_task, advance=50)
 
             # Extract data from the result
             businesses_data = all_data.get('businesses', [])
@@ -921,9 +931,9 @@ def generate(
             transactions_data = all_data.get('transactions', [])
             returns_data = all_data.get('returns', [])
 
-        except Exception as e:
-            console.print(f"[bold red]❌ Error during generation:[/bold red] {e}")
-            raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[bold red]❌ Error during generation:[/bold red] {e}")
+        raise typer.Exit(1)
 
     # Export data with progress
     export_panel = Panel.fit(
@@ -946,7 +956,7 @@ def generate(
         # Check if database export is requested
         if db_type != "sqlite" or any([db_host, db_name, db_username, db_connection_string]):
             # Database export
-            with Status(f"[bold blue]Exporting to {db_type.upper()} database...[/bold blue]", spinner="bouncingBall") as status:
+            with console.status(f"[bold blue]Exporting to {db_type.upper()} database...[/bold blue]") as status:
                 # Create database configuration
                 db_config = DatabaseConfig(
                     db_type=db_type,
@@ -963,7 +973,7 @@ def generate(
                 # Export to database
                 exported_tables = generator.export_to_database(db_config)
 
-                status.update("[bold green]✅ Database export completed successfully![/bold green]")
+                # Database export completed
 
                 # Show database export summary
                 db_summary_table = Table(title="[bold cyan]🗄️ Database Export Summary[/bold cyan]", show_header=True, header_style="bold magenta")
@@ -991,7 +1001,7 @@ def generate(
 
         else:
             # File-based export
-            with Status(f"[bold blue]Exporting to {format.upper()}...[/bold blue]", spinner="bouncingBall") as status:
+            with console.status(f"[bold blue]Exporting to {format.upper()}...[/bold blue]") as status:
                 # Create output directory
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1009,7 +1019,7 @@ def generate(
                 else:
                     raise ValueError(f"Unsupported format: {format}")
 
-                status.update("[bold green]✅ Export completed successfully![/bold green]")
+                # Export completed
 
     except Exception as e:
         console.print(f"[bold red]❌ Error during export:[/bold red] {e}")
@@ -1069,83 +1079,6 @@ def generate(
 
     console.print()
     console.print(success_panel)
-
-    # Create configuration
-    config = POSGeneratorConfig(
-        seed=seed,
-        start_date=datetime.now() - timedelta(days=days),
-        end_date=datetime.now(),
-        output_dir=output_dir,
-    )
-
-    # Initialize generator
-    generator = POSDataGenerator(config)
-
-    # Generate data with progress display
-    with console.status("[bold green]Generating data...") as status:
-        result = generator.generate_all_data(businesses, customers)
-
-    # Display summary
-    table = Table(title="Generation Summary")
-    table.add_column("Data Type", style="cyan")
-    table.add_column("Count", style="magenta")
-    table.add_column("Details", style="green")
-
-    table.add_row("Businesses", str(result["summary"]["total_businesses"]), "Australian businesses with valid ABNs")
-    table.add_row("Customers", str(result["summary"]["total_customers"]), "Customers with Australian addresses")
-    table.add_row("Transactions", str(result["summary"]["total_transactions"]), "Sales transactions with GST")
-    table.add_row("Returns", str(result["summary"]["total_returns"]), "Return transactions")
-
-    console.print(table)
-
-    # Export data
-    export_msg = f"[bold green]Exporting data to {format.upper()}..."
-    with console.status(export_msg) as status:
-        if format.lower() == "csv":
-            exported_files = generator.export_to_csv()
-            generator.export_line_items()
-        elif format.lower() == "json":
-            exported_files = generator.export_to_json()
-        elif format.lower() == "xlsx":
-            exported_files = generator.export_to_excel()
-        elif format.lower() == "parquet":
-            exported_files = generator.export_to_parquet()
-        elif format.lower() == "sqlite":
-            exported_files = generator.export_to_sqlite()
-        else:
-            console.print(f"[red]Error: Unsupported format '{format}'[/red]")
-            raise typer.Exit(1)
-
-    # Display export results
-    console.print(f"\n[bold green]Data exported successfully to {format.upper()}![/bold green]")
-    if isinstance(exported_files, dict):
-        for data_type, file_path in exported_files.items():
-            console.print(f"  • {data_type.title()}: {file_path}")
-    else:
-        console.print(f"  • Database: {exported_files}")
-
-    # Save configuration for reference
-    config_file = output_dir / "generation_config.json"
-    config_dict = {
-        "businesses": businesses,
-        "customers": customers,
-        "days": days,
-        "seed": seed,
-        "format": format,
-        "date_range": {
-            "start": config.start_date.isoformat(),
-            "end": config.end_date.isoformat(),
-        },
-        "generated_at": datetime.now().isoformat(),
-        "summary": result["summary"],
-    }
-
-    with open(config_file, "w") as f:
-        json.dump(config_dict, f, indent=2)
-
-    console.print(f"  • Configuration: {config_file}")
-
-    console.print("\n[bold green]Generation complete![/bold green]")
 
 
 @app.command()
