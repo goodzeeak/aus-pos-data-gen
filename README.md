@@ -541,6 +541,24 @@ aus-pos-gen stream --format parquet --output stream_data.parquet --rate 1.0 --du
 aus-pos-gen stream --format database --db-type postgresql --db-host localhost --db-name live_pos --rate 3.0
 ```
 
+### 📺 **Console Monitoring - Always On!**
+
+All streaming formats now include **real-time console output** for monitoring:
+
+```bash
+# Even when streaming to files or databases, you'll see:
+19:11:26 62 328 588 424 → $511.10 (CONTACTLESS) (CSV)
+19:11:27 71 902 294 131 → $248.45 (CONTACTLESS) (DATABASE)
+19:11:28 62 328 588 424 → $1248.05 (EFTPOS) (PARQUET)
+```
+
+**What you'll see:**
+- ⏰ **Timestamp** - When the transaction was generated
+- 🏢 **Business ABN** - Which business processed the transaction
+- 💰 **Amount & Payment Method** - Transaction details
+- 📋 **Format Indicator** - Shows which format is being streamed to (CSV, XLSX, PARQUET, DATABASE)
+- 🌈 **Color-coded** - Different colors for easy visual parsing
+
 ### 🎨 **What You'll See - Beautiful Streaming Output**
 
 ```

@@ -264,13 +264,18 @@ def stream(
 
             transaction_count += 1
 
-            # Format and output transaction
-            if format.lower() == "console":
+            # Always show console output for monitoring (except when format is explicitly console-only)
+            if format.lower() != "console":
                 console.print(f"[dim]{datetime.now().strftime('%H:%M:%S')}[/dim] "
                             f"[cyan]{transaction.business_abn}[/cyan] → "
                             f"[green]${transaction.total_inc_gst}[/green] "
-                            f"({transaction.payment_method})")
+                            f"({transaction.payment_method}) "
+                            f"[blue]({format.upper()})[/blue]")
 
+            # Format-specific output handling
+            if format.lower() == "console":
+                # Console output already handled above
+                pass
             elif format.lower() == "json":
                 transaction_data = transaction.dict()
                 transaction_data["items"] = [item.dict() for item in transaction.items]
