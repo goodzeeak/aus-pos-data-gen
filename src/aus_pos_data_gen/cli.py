@@ -24,7 +24,7 @@ from rich.live import Live
 from rich.status import Status
 from rich.spinner import Spinner
 
-from .config import POSGeneratorConfig
+from .config import POSGeneratorConfig, DatabaseConfig
 from .generator import POSDataGenerator
 
 # Initialize CLI app
@@ -259,26 +259,130 @@ def interactive():
             ]
         ).ask()
 
+        # Database configuration if needed
+        db_config = {}
+        if format_choice == "sqlite":
+            # For SQLite, ask if they want to use direct database connection
+            use_db_connection = questionary.confirm(
+                "Use direct database connection for SQLite?",
+                default=False
+            ).ask()
+
+            if use_db_connection:
+                db_file_path = questionary.text(
+                    "SQLite database file path:",
+                    default="./data/aus_pos_data.db"
+                ).ask()
+                db_config = {
+                    "db_type": "sqlite",
+                    "database": db_file_path
+                }
+        else:
+            # For other formats, ask if they want to export to external database
+            use_database = questionary.confirm(
+                f"Export to external database instead of {format_choice.upper()} file?",
+                default=False
+            ).ask()
+
+            if use_database:
+                db_type = questionary.select(
+                    "Which database type?",
+                    choices=[
+                        {"name": "PostgreSQL", "value": "postgresql"},
+                        {"name": "MySQL", "value": "mysql"},
+                        {"name": "MariaDB", "value": "mariadb"}
+                    ]
+                ).ask()
+
+                db_host = questionary.text(
+                    f"{db_type.title()} host:",
+                    default="localhost"
+                ).ask()
+
+                db_port = questionary.text(
+                    f"{db_type.title()} port:",
+                    default="5432" if db_type == "postgresql" else "3306"
+                ).ask()
+
+                db_name = questionary.text(
+                    "Database name:",
+                    default="aus_pos_data"
+                ).ask()
+
+                db_username = questionary.text(
+                    "Database username:",
+                    default="postgres" if db_type == "postgresql" else "root"
+                ).ask()
+
+                db_password = questionary.password(
+                    "Database password:"
+                ).ask()
+
+                table_prefix = questionary.text(
+                    "Table prefix (optional):",
+                    default=""
+                ).ask()
+
+                db_schema = None
+                if db_type == "postgresql":
+                    db_schema = questionary.text(
+                        "Database schema (optional):",
+                        default="public"
+                    ).ask()
+
+                db_config = {
+                    "db_type": db_type,
+                    "host": db_host,
+                    "port": int(db_port),
+                    "database": db_name,
+                    "username": db_username,
+                    "password": db_password,
+                    "table_prefix": table_prefix,
+                    "db_schema": db_schema
+                }
+
         config_answers = {
             "businesses": businesses,
             "customers": customers,
             "days": days,
             "seed": seed,
-            "format": format_choice
+            "format": format_choice,
+            "db_config": db_config
         }
 
         # Run batch generation
         console.print(f"\n[green]🚀 Generating {config_answers['days']} days of data for {config_answers['businesses']} businesses...[/green]")
 
         # Call the generate function with the answers
-        generate(
-            businesses=int(config_answers['businesses']),
-            customers=int(config_answers['customers']),
-            days=int(config_answers['days']),
-            seed=int(config_answers['seed']),
-            format=config_answers['format'],
-            verbose=True
-        )
+        if config_answers['db_config']:
+            # Use database export
+            db_config_dict = config_answers['db_config']
+            generate(
+                businesses=int(config_answers['businesses']),
+                customers=int(config_answers['customers']),
+                days=int(config_answers['days']),
+                seed=int(config_answers['seed']),
+                format=config_answers['format'],
+                db_type=db_config_dict.get('db_type', 'sqlite'),
+                db_host=db_config_dict.get('host'),
+                db_port=db_config_dict.get('port'),
+                db_name=db_config_dict.get('database'),
+                db_username=db_config_dict.get('username'),
+                db_password=db_config_dict.get('password'),
+                db_table_prefix=db_config_dict.get('table_prefix', ''),
+                db_schema=db_config_dict.get('db_schema'),
+                verbose=True
+            )
+        else:
+            # Use file export
+            generate(
+                businesses=int(config_answers['businesses']),
+                customers=int(config_answers['customers']),
+                days=int(config_answers['days']),
+                seed=int(config_answers['seed']),
+                format=config_answers['format'],
+                verbose=True
+            )
 
     elif operation_answers['operation'] == 'stream':
         # Streaming configuration
@@ -379,6 +483,17 @@ def generate(
     seed: int = typer.Option(42, "--seed", "-s", help="Random seed for reproducibility"),
     format: str = typer.Option("csv", "--format", "-f", help="Export format: csv, json, xlsx, parquet, sqlite"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+
+    # Database options
+    db_type: str = typer.Option("sqlite", "--db-type", help="Database type: sqlite, postgresql, mysql, mariadb"),
+    db_host: Optional[str] = typer.Option(None, "--db-host", help="Database host (for external databases)"),
+    db_port: Optional[int] = typer.Option(None, "--db-port", help="Database port"),
+    db_name: Optional[str] = typer.Option(None, "--db-name", help="Database name"),
+    db_username: Optional[str] = typer.Option(None, "--db-username", help="Database username"),
+    db_password: Optional[str] = typer.Option(None, "--db-password", help="Database password"),
+    db_connection_string: Optional[str] = typer.Option(None, "--db-connection-string", help="Full database connection string"),
+    db_table_prefix: str = typer.Option("", "--db-table-prefix", help="Prefix for database table names"),
+    db_schema: Optional[str] = typer.Option(None, "--db-schema", help="Database schema (PostgreSQL)"),
 ):
     """🎯 Generate Australian POS transaction dataset with beautiful progress visualization."""
 
@@ -490,25 +605,73 @@ def generate(
     console.print()
 
     try:
-        with Status(f"[bold blue]Exporting to {format.upper()}...[/bold blue]", spinner="bouncingBall") as status:
-            # Create output directory
-            output_dir.mkdir(parents=True, exist_ok=True)
+        # Check if database export is requested
+        if db_type != "sqlite" or any([db_host, db_name, db_username, db_connection_string]):
+            # Database export
+            with Status(f"[bold blue]Exporting to {db_type.upper()} database...[/bold blue]", spinner="bouncingBall") as status:
+                # Create database configuration
+                db_config = DatabaseConfig(
+                    db_type=db_type,
+                    host=db_host,
+                    port=db_port,
+                    database=db_name,
+                    username=db_username,
+                    password=db_password,
+                    connection_string=db_connection_string,
+                    table_prefix=db_table_prefix,
+                    schema=db_schema
+                )
 
-            # Export based on format
-            if format.lower() == "csv":
-                generator.export_to_csv(output_dir)
-            elif format.lower() == "json":
-                generator.export_to_json(output_dir)
-            elif format.lower() == "xlsx":
-                generator.export_to_excel(output_dir)
-            elif format.lower() == "parquet":
-                generator.export_to_parquet(output_dir)
-            elif format.lower() == "sqlite":
-                generator.export_to_sqlite(output_dir)
-            else:
-                raise ValueError(f"Unsupported format: {format}")
+                # Export to database
+                exported_tables = generator.export_to_database(db_config)
 
-            status.update("[bold green]✅ Export completed successfully![/bold green]")
+                status.update("[bold green]✅ Database export completed successfully![/bold green]")
+
+                # Show database export summary
+                db_summary_table = Table(title="[bold cyan]🗄️ Database Export Summary[/bold cyan]", show_header=True, header_style="bold magenta")
+                db_summary_table.add_column("Table", style="cyan", no_wrap=True)
+                db_summary_table.add_column("Records", style="green", justify="right")
+                db_summary_table.add_column("Status", style="white")
+
+                # Add database connection info
+                db_info_panel = Panel.fit(
+                    Align.center(
+                        Text.from_markup(
+                            f"[bold blue]Database:[/bold blue] {db_type.upper()}\n"
+                            f"[bold blue]Connection:[/bold blue] {db_config.get_connection_string().split('://')[0]}://***:***@{db_host or 'localhost'}:{db_port or 'default'}\n"
+                            f"[bold blue]Schema:[/bold blue] {db_schema or 'default'}"
+                        )
+                    ),
+                    title="[bold cyan]🔗 Database Connection[/bold cyan]",
+                    border_style="blue",
+                    padding=(1, 2)
+                )
+
+                console.print()
+                console.print(db_info_panel)
+                console.print()
+
+        else:
+            # File-based export
+            with Status(f"[bold blue]Exporting to {format.upper()}...[/bold blue]", spinner="bouncingBall") as status:
+                # Create output directory
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                # Export based on format
+                if format.lower() == "csv":
+                    generator.export_to_csv(output_dir)
+                elif format.lower() == "json":
+                    generator.export_to_json(output_dir)
+                elif format.lower() == "xlsx":
+                    generator.export_to_excel(output_dir)
+                elif format.lower() == "parquet":
+                    generator.export_to_parquet(output_dir)
+                elif format.lower() == "sqlite":
+                    generator.export_to_sqlite(output_dir)
+                else:
+                    raise ValueError(f"Unsupported format: {format}")
+
+                status.update("[bold green]✅ Export completed successfully![/bold green]")
 
     except Exception as e:
         console.print(f"[bold red]❌ Error during export:[/bold red] {e}")
@@ -881,55 +1044,81 @@ def stream_formats():
 
 @app.command()
 def formats():
-    """List all available export formats and their descriptions."""
-    from rich.table import Table
+    """📊 List all available export formats and database options with beautiful formatting."""
 
-    table = Table(title="Available Export Formats")
-    table.add_column("Format", style="cyan", no_wrap=True)
-    table.add_column("Extension", style="magenta")
-    table.add_column("Description", style="green")
-    table.add_column("Use Case", style="yellow")
+    # File formats table
+    file_table = Table(
+        title="[bold cyan]📤 File Export Formats[/bold cyan]",
+        show_header=True,
+        header_style="bold magenta",
+        show_lines=True
+    )
+    file_table.add_column("Format", style="cyan", no_wrap=True)
+    file_table.add_column("Extension", style="blue", no_wrap=True)
+    file_table.add_column("Description", style="white")
+    file_table.add_column("Best For", style="green")
 
-    table.add_row(
-        "CSV",
-        ".csv",
-        "Comma-separated values with headers",
-        "Excel analysis, basic data processing"
+    file_formats = [
+        ("CSV", ".csv", "Comma-separated values with headers", "Excel analysis, basic data processing"),
+        ("JSON", ".json", "Structured JSON with nested data", "API integration, web applications"),
+        ("Excel", ".xlsx", "Multi-sheet Excel workbook", "Business reporting, presentations"),
+        ("Parquet", ".parquet", "Columnar storage format", "Big data analytics, data lakes"),
+        ("SQLite", ".db", "Local SQLite database file", "Complex queries, data relationships"),
+    ]
+
+    for fmt, ext, desc, use in file_formats:
+        file_table.add_row(fmt, ext, desc, use)
+
+    # Database formats table
+    db_table = Table(
+        title="[bold cyan]🗄️ Direct Database Export[/bold cyan]",
+        show_header=True,
+        header_style="bold blue",
+        show_lines=True
     )
-    table.add_row(
-        "JSON",
-        ".json",
-        "Structured JSON with nested data",
-        "API integration, web applications"
-    )
-    table.add_row(
-        "Excel",
-        ".xlsx",
-        "Multi-sheet Excel workbook",
-        "Business reporting, stakeholder presentations"
-    )
-    table.add_row(
-        "Parquet",
-        ".parquet",
-        "Columnar storage format",
-        "Big data analytics, data lakes"
-    )
-    table.add_row(
-        "SQLite",
-        ".db",
-        "Relational database file",
-        "Complex queries, data relationships"
+    db_table.add_column("Database", style="cyan", no_wrap=True)
+    db_table.add_column("Driver", style="blue", no_wrap=True)
+    db_table.add_column("Description", style="white")
+    db_table.add_column("Use Case", style="green")
+
+    db_formats = [
+        ("PostgreSQL", "psycopg2", "Enterprise-grade open source database", "Production applications, analytics"),
+        ("MySQL", "PyMySQL", "Popular open source database", "Web applications, reporting"),
+        ("MariaDB", "PyMySQL", "MySQL-compatible database", "Cost-effective MySQL alternative"),
+        ("SQLite", "sqlite3", "Local file-based database", "Development, testing, small apps"),
+    ]
+
+    for db, driver, desc, use in db_formats:
+        db_table.add_row(db, driver, desc, use)
+
+    console.print(file_table)
+    console.print()
+    console.print(db_table)
+    console.print()
+
+    # Usage examples panel
+    usage_panel = Panel.fit(
+        Align.left(
+            Text.from_markup(
+                "[bold green]📝 File Export Examples:[/bold green]\n\n"
+                "[cyan]aus-pos-gen generate --format csv --businesses 10[/cyan]\n"
+                "[cyan]aus-pos-gen generate --format parquet --days 365[/cyan]\n"
+                "[cyan]aus-pos-gen generate --format sqlite --customers 5000[/cyan]\n\n"
+                "[bold yellow]🗄️ Database Export Examples:[/bold yellow]\n\n"
+                "[cyan]aus-pos-gen generate --db-type postgresql --db-host localhost --db-name pos_data --db-username user --db-password pass[/cyan]\n"
+                "[cyan]aus-pos-gen generate --db-type mysql --db-host 192.168.1.100 --db-port 3306 --db-name retail_db --db-username admin --db-password secret[/cyan]\n"
+                "[cyan]aus-pos-gen generate --db-connection-string 'postgresql://user:pass@localhost:5432/pos_db' --db-schema public[/cyan]\n\n"
+                "[bold blue]📋 Table Prefix Examples:[/bold blue]\n\n"
+                "[cyan]aus-pos-gen generate --db-table-prefix 'aus_' --db-type postgresql[/cyan]  [dim]# Creates: aus_businesses, aus_customers, etc.[/dim]\n"
+                "[cyan]aus-pos-gen generate --db-table-prefix 'pos_' --db-type mysql[/cyan]  [dim]# Creates: pos_businesses, pos_customers, etc.[/dim]"
+            )
+        ),
+        title="[bold magenta]💡 Usage Examples[/bold magenta]",
+        border_style="green",
+        padding=(1, 2)
     )
 
-    console.print(table)
-
-    console.print("\n[bold]Usage:[/bold]")
-    console.print("  aus-pos-gen generate --format <format> [other options]")
-    console.print("\n[bold]Examples:[/bold]")
-    console.print("  aus-pos-gen generate --format json")
-    console.print("  aus-pos-gen generate --format xlsx")
-    console.print("  aus-pos-gen generate --format parquet")
-    console.print("  aus-pos-gen generate --format sqlite")
+    console.print(usage_panel)
 
 
 @app.command()

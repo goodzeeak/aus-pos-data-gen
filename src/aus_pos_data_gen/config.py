@@ -6,10 +6,11 @@ using Pydantic for type safety and settings validation.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from dataclasses import dataclass
 from pydantic import BaseModel, Field, validator
 from datetime import datetime, timedelta
+from urllib.parse import quote_plus
 
 
 class AustralianPaymentMethods:
@@ -113,6 +114,110 @@ class ReturnRates:
         return rates.get(category.lower(), 0.08)  # Default 8% return rate
 
 
+class DatabaseConfig(BaseModel):
+    """Database connection configuration for direct database exports."""
+
+    # Database type selection
+    db_type: str = Field(
+        default="sqlite",
+        description="Database type: sqlite, postgresql, mysql, mariadb"
+    )
+
+    # Connection parameters
+    host: Optional[str] = Field(default=None, description="Database host")
+    port: Optional[int] = Field(default=None, description="Database port")
+    database: Optional[str] = Field(default=None, description="Database name")
+    username: Optional[str] = Field(default=None, description="Database username")
+    password: Optional[str] = Field(default=None, description="Database password")
+
+    # Connection string (alternative to individual parameters)
+    connection_string: Optional[str] = Field(
+        default=None,
+        description="Full database connection string"
+    )
+
+    # Table configuration
+    table_prefix: str = Field(
+        default="",
+        description="Prefix for table names (e.g., 'pos_' creates pos_businesses)"
+    )
+
+    db_schema: Optional[str] = Field(
+        default=None,
+        description="Database schema (PostgreSQL specific)"
+    )
+
+    # Connection options
+    pool_size: int = Field(default=5, description="Connection pool size")
+    max_overflow: int = Field(default=10, description="Max overflow connections")
+    echo: bool = Field(default=False, description="Enable SQLAlchemy echo for debugging")
+
+    # SSL and security options
+    ssl_mode: Optional[str] = Field(default=None, description="SSL mode for PostgreSQL")
+    ssl_cert: Optional[str] = Field(default=None, description="SSL certificate path")
+    ssl_key: Optional[str] = Field(default=None, description="SSL key path")
+
+    @validator("db_type")
+    def validate_db_type(cls, v):
+        """Validate database type."""
+        valid_types = {"sqlite", "postgresql", "mysql", "mariadb"}
+        if v.lower() not in valid_types:
+            raise ValueError(f"db_type must be one of: {', '.join(valid_types)}")
+        return v.lower()
+
+    @validator("port")
+    def validate_port(cls, v):
+        """Validate port number."""
+        if v is not None and (v < 1 or v > 65535):
+            raise ValueError("Port must be between 1 and 65535")
+        return v
+
+    def get_connection_string(self) -> str:
+        """Generate database connection string."""
+        if self.connection_string:
+            return self.connection_string
+
+        if self.db_type == "sqlite":
+            if self.database:
+                return f"sqlite:///{self.database}"
+            else:
+                return "sqlite:///:memory:"
+
+        elif self.db_type in ("postgresql", "mysql", "mariadb"):
+            if not all([self.host, self.database, self.username]):
+                raise ValueError(
+                    f"For {self.db_type}, host, database, and username are required"
+                )
+
+            # Set default ports if not specified
+            if not self.port:
+                if self.db_type == "postgresql":
+                    self.port = 5432
+                elif self.db_type in ("mysql", "mariadb"):
+                    self.port = 3306
+
+            # URL encode password for safety
+            encoded_password = quote_plus(self.password or "")
+
+            if self.db_type == "postgresql":
+                return (
+                    f"postgresql://{self.username}:{encoded_password}"
+                    f"@{self.host}:{self.port}/{self.database}"
+                )
+            else:  # mysql, mariadb
+                return (
+                    f"mysql+pymysql://{self.username}:{encoded_password}"
+                    f"@{self.host}:{self.port}/{self.database}"
+                )
+
+        else:
+            raise ValueError(f"Unsupported database type: {self.db_type}")
+
+    def get_table_name(self, table_type: str) -> str:
+        """Generate full table name with prefix."""
+        return f"{self.table_prefix}{table_type}"
+
+
 class POSGeneratorConfig(BaseModel):
     """Main configuration for POS data generator."""
 
@@ -164,6 +269,12 @@ class POSGeneratorConfig(BaseModel):
     output_dir: Path = Field(
         default_factory=lambda: Path("data/processed"),
         description="Output directory for generated data"
+    )
+
+    # Database export settings
+    db_config: Optional[DatabaseConfig] = Field(
+        default=None,
+        description="Database connection configuration for direct database exports"
     )
 
     # Australian-specific settings

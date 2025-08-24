@@ -241,6 +241,272 @@ aus-pos-gen generate --format sqlite --days 180 --customers 5000
 
 ---
 
+## 🗄️ **Direct Database Connectivity**
+
+**Export data directly to PostgreSQL, MySQL, MariaDB, and SQLite databases with full CLI integration!**
+
+### 🚀 **Database Export Features**
+
+- **Direct Connection**: Export data directly to external databases without intermediate files
+- **Multiple Database Support**: PostgreSQL, MySQL, MariaDB, and SQLite
+- **Automatic Table Creation**: Schema generation with proper data types and constraints
+- **Connection Pooling**: Efficient connection management for large datasets
+- **Error Handling**: Comprehensive error handling with detailed logging
+- **Table Prefixes**: Organize tables with custom prefixes (e.g., `aus_businesses`)
+- **Schema Support**: PostgreSQL schema support for multi-tenant applications
+
+### 📊 **Database Connection Options**
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--db-type` | Database type | `postgresql`, `mysql`, `mariadb`, `sqlite` |
+| `--db-host` | Database host | `localhost`, `192.168.1.100` |
+| `--db-port` | Database port | `5432` (PostgreSQL), `3306` (MySQL) |
+| `--db-name` | Database name | `aus_pos_data` |
+| `--db-username` | Database username | `postgres`, `root` |
+| `--db-password` | Database password | `your_password` |
+| `--db-connection-string` | Full connection string | `postgresql://user:pass@host:5432/db` |
+| `--db-table-prefix` | Table prefix | `aus_`, `pos_` |
+| `--db-schema` | Database schema | `public` (PostgreSQL only) |
+
+### 🏗️ **Database Export Examples**
+
+#### **PostgreSQL Export**
+```bash
+# Export to PostgreSQL with individual parameters
+aus-pos-gen generate --businesses 5 --customers 1000 --days 30 \
+  --db-type postgresql \
+  --db-host localhost \
+  --db-port 5432 \
+  --db-name aus_pos_data \
+  --db-username postgres \
+  --db-password mypassword \
+  --db-schema public \
+  --db-table-prefix aus_
+
+# Export to PostgreSQL with connection string
+aus-pos-gen generate --businesses 5 --customers 1000 --days 30 \
+  --db-connection-string "postgresql://postgres:mypassword@localhost:5432/aus_pos_data"
+```
+
+#### **MySQL/MariaDB Export**
+```bash
+# Export to MySQL
+aus-pos-gen generate --businesses 10 --customers 5000 --days 90 \
+  --db-type mysql \
+  --db-host 192.168.1.100 \
+  --db-port 3306 \
+  --db-name retail_data \
+  --db-username admin \
+  --db-password securepass \
+  --db-table-prefix pos_
+
+# Export to MariaDB
+aus-pos-gen generate --businesses 5 --customers 2000 --days 60 \
+  --db-type mariadb \
+  --db-host mariadb.example.com \
+  --db-name sales_data \
+  --db-username dbuser \
+  --db-password dbpass
+```
+
+#### **SQLite Export**
+```bash
+# Export to SQLite file with direct connection
+aus-pos-gen generate --businesses 3 --customers 500 --days 30 \
+  --db-type sqlite \
+  --db-name ./data/aus_pos_live.db
+
+# Traditional SQLite file export (still supported)
+aus-pos-gen generate --format sqlite --businesses 3 --customers 500 --days 30
+```
+
+### 📋 **Database Schema Overview**
+
+When exporting to databases, the following tables are automatically created:
+
+#### **Core Tables**
+- `businesses` / `aus_businesses` - Business information with ABN validation
+- `customers` / `aus_customers` - Customer demographics and contact details
+- `transactions` / `aus_transactions` - Transaction headers with JSON item data
+- `transaction_items` / `aus_transaction_items` - Individual line items
+- `returns` / `aus_returns` - Return transactions and refund data
+
+#### **Table Structure Example**
+```sql
+-- Businesses table
+CREATE TABLE aus_businesses (
+    store_id VARCHAR(10) PRIMARY KEY,
+    business_name VARCHAR(255),
+    abn VARCHAR(15),
+    trading_name VARCHAR(255),
+    store_address VARCHAR(255),
+    suburb VARCHAR(100),
+    state VARCHAR(5),
+    postcode VARCHAR(10),
+    phone VARCHAR(20),
+    email VARCHAR(255),
+    gst_registered BOOLEAN,
+    pos_system_type VARCHAR(50),
+    terminal_count INTEGER
+);
+
+-- Transactions table with JSON items
+CREATE TABLE aus_transactions (
+    transaction_id VARCHAR(30) PRIMARY KEY,
+    store_id VARCHAR(10),
+    workstation_id VARCHAR(10),
+    employee_id VARCHAR(10),
+    transaction_type VARCHAR(20),
+    business_day_date TIMESTAMP,
+    transaction_datetime TIMESTAMP,
+    sequence_number INTEGER,
+    receipt_number VARCHAR(20),
+    customer_id VARCHAR(20),
+    subtotal_ex_gst DECIMAL(10,2),
+    gst_amount DECIMAL(10,2),
+    total_inc_gst DECIMAL(10,2),
+    payment_method VARCHAR(30),
+    tender_amount DECIMAL(10,2),
+    change_amount DECIMAL(10,2),
+    currency_code VARCHAR(5),
+    operator_id VARCHAR(10),
+    shift_id VARCHAR(10),
+    business_abn VARCHAR(15),
+    items JSON  -- PostgreSQL JSON, MySQL JSON, SQLite TEXT
+);
+```
+
+### 🔧 **Database Prerequisites**
+
+#### **PostgreSQL Setup**
+```bash
+# Install PostgreSQL
+sudo apt-get install postgresql postgresql-contrib
+
+# Create database and user
+sudo -u postgres psql
+CREATE DATABASE aus_pos_data;
+CREATE USER aus_pos_user WITH PASSWORD 'secure_password';
+GRANT ALL PRIVILEGES ON DATABASE aus_pos_data TO aus_pos_user;
+```
+
+#### **MySQL/MariaDB Setup**
+```bash
+# Install MySQL
+sudo apt-get install mysql-server
+
+# Create database and user
+mysql -u root -p
+CREATE DATABASE aus_pos_data;
+CREATE USER 'aus_pos_user'@'%' IDENTIFIED BY 'secure_password';
+GRANT ALL PRIVILEGES ON aus_pos_data.* TO 'aus_pos_user'@'%';
+FLUSH PRIVILEGES;
+```
+
+### 🎯 **Use Cases for Database Export**
+
+#### **Production Data Pipeline**
+```bash
+# Export to production PostgreSQL database
+aus-pos-gen generate --businesses 50 --customers 100000 --days 365 \
+  --db-type postgresql \
+  --db-host prod-db.company.com \
+  --db-name aus_retail_prod \
+  --db-username etl_user \
+  --db-password secure_prod_password \
+  --db-schema retail
+```
+
+#### **Analytics Data Warehouse**
+```bash
+# Export to analytics MySQL data warehouse
+aus-pos-gen generate --businesses 100 --customers 500000 --days 730 \
+  --db-type mysql \
+  --db-host analytics.company.com \
+  --db-name retail_analytics \
+  --db-username analytics_user \
+  --db-password analytics_password \
+  --db-table-prefix dw_  # Data warehouse prefix
+```
+
+#### **Development Testing**
+```bash
+# Export to local PostgreSQL for development
+aus-pos-gen generate --businesses 5 --customers 1000 --days 30 \
+  --db-type postgresql \
+  --db-host localhost \
+  --db-name aus_pos_dev \
+  --db-username postgres \
+  --db-password dev_password
+```
+
+### 🚀 **Database vs File Export Comparison**
+
+| Feature | Database Export | File Export |
+|---------|----------------|-------------|
+| **Performance** | ⭐⭐⭐⭐⭐ (Direct connection) | ⭐⭐⭐⭐ (File I/O) |
+| **Scalability** | ⭐⭐⭐⭐⭐ (Handles millions of records) | ⭐⭐⭐ (Limited by memory) |
+| **Integration** | ⭐⭐⭐⭐⭐ (Direct database access) | ⭐⭐ (Import required) |
+| **Querying** | ⭐⭐⭐⭐⭐ (Native SQL queries) | ⭐⭐⭐ (External tools needed) |
+| **Setup** | ⭐⭐⭐ (Database required) | ⭐⭐⭐⭐⭐ (Just files) |
+| **Best For** | Production, analytics, integration | Development, demos, small datasets |
+
+### 🛡️ **Security & Best Practices**
+
+#### **Connection Security**
+- **SSL/TLS**: Use SSL connections for production databases
+- **Password Security**: Never hardcode passwords in scripts
+- **User Privileges**: Use dedicated database users with minimal permissions
+- **Network Security**: Use VPNs or SSH tunnels for remote connections
+
+#### **Environment Variables**
+```bash
+# Use environment variables for sensitive data
+export DB_PASSWORD="your_secure_password"
+export DB_HOST="prod-db.company.com"
+
+# Then use in commands
+aus-pos-gen generate --db-type postgresql \
+  --db-host $DB_HOST \
+  --db-password $DB_PASSWORD \
+  --db-name production_data
+```
+
+#### **Connection String Alternative**
+```bash
+# Use connection strings for complex configurations
+aus-pos-gen generate --db-connection-string "postgresql://user:pass@host:5432/db?sslmode=require"
+```
+
+### 📈 **Performance Tips**
+
+#### **For Large Datasets**
+```bash
+# Use connection pooling for large exports
+aus-pos-gen generate --businesses 100 --customers 1000000 --days 365 \
+  --db-type postgresql \
+  --db-host analytics.company.com \
+  --db-name big_data_warehouse \
+  --db-username etl_user \
+  --db-password secure_password
+```
+
+#### **Batch Processing**
+- **Automatic Batching**: Large datasets are automatically processed in batches
+- **Progress Tracking**: Real-time progress with Rich progress bars
+- **Error Recovery**: Failed batches can be retried individually
+
+#### **Index Optimization**
+```sql
+-- Recommended indexes for query performance
+CREATE INDEX idx_transactions_date ON aus_transactions(business_day_date);
+CREATE INDEX idx_transactions_customer ON aus_transactions(customer_id);
+CREATE INDEX idx_transaction_items_txn ON aus_transaction_items(transaction_id);
+```
+
+---
+
 ## 🌊 **Live Data Streaming - Real-Time Testing**
 
 **Stream continuous Australian POS transaction data for real-time analytics and testing:**
