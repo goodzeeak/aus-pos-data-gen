@@ -1,14 +1,14 @@
-# 🇦🇺 Australian POS Transaction Dataset Generator
+# 🇦🇺 Australian POS Data Generator
 
-**A professional, beautiful, and comprehensive Python package for generating synthetic Australian Point-of-Sale (POS) transaction datasets with full ATO compliance and stunning CLI interface.**
+**Professional synthetic Australian retail transaction data with enterprise-grade CLI, real-time streaming, and direct database connectivity.**
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Conda](https://img.shields.io/badge/Conda-Ready-green.svg)](https://docs.conda.io/)
 [![Rich CLI](https://img.shields.io/badge/CLI-Rich%20Enhanced-cyan.svg)](https://rich.readthedocs.io/)
-[![Interactive](https://img.shields.io/badge/Interactive-Questionary-magenta.svg)](https://questionary.readthedocs.io/)
+[![Streaming](https://img.shields.io/badge/Streaming-Real--time-orange.svg)](#-live-data-streaming)
 
-> 🎯 **Generate realistic Australian retail data with enterprise-grade CLI experience**
+> 🎯 **Beautiful CLI • Real-time Streaming • Direct Database Export • 100% ATO Compliant**
 
 ---
 
@@ -39,12 +39,12 @@
 - **Customer Demographics**: Individual, business, and loyalty program members
 - **Product Catalog**: Australian retail products with proper GST classification
 
-### 🛠️ **Enterprise Features**
-- **Pydantic Models**: Type-safe data models with validation
-- **Conda Environment**: Full conda support with professional dependency management
-- **Multiple Formats**: Export to CSV, JSON, Excel, Parquet, SQLite with live progress
-- **Reproducible**: Configurable random seeds for consistent results
-- **Streaming**: Real-time data streaming for testing streaming applications
+### 🚀 **Real-Time Streaming & Database Export**
+- **Live Data Streaming**: Real-time transaction streaming to console, files, or databases
+- **Multiple Stream Formats**: Console, CSV, JSON, Parquet, and direct database insertion
+- **Direct Database Export**: Export directly to PostgreSQL, MySQL, MariaDB, SQLite
+- **Professional CLI**: Rich-enhanced interface with progress bars and beautiful panels
+- **Interactive Mode**: Guided step-by-step configuration wizard
 
 ---
 
@@ -71,19 +71,19 @@ pip install -e .
 ```
 
 ### 🎨 **What's Included**
-- **Rich 13.7.0** - Beautiful terminal formatting and progress bars
-- **Questionary 2.1.0** - Interactive CLI with real-time validation
-- **Pydantic 2.11.7** - Type-safe data models and validation
-- **Loguru 0.7.3** - Professional logging with colors
-- **All export formats**: CSV, JSON, Excel, Parquet, SQLite
+- **Rich CLI**: Beautiful terminal formatting with progress bars and panels
+- **Interactive Mode**: Guided configuration with real-time validation
+- **Multiple Export Formats**: CSV, JSON, Excel, Parquet, SQLite
+- **Database Connectivity**: Direct export to PostgreSQL, MySQL, MariaDB, SQLite
+- **Real-Time Streaming**: Live data streaming with multiple output formats
 
 ### 🧪 **Verify Installation**
 
 ```bash
-# Check the beautiful info command
+# Check system overview
 aus-pos-gen info
 
-# Test interactive mode
+# Experience interactive mode
 aus-pos-gen interactive
 ```
 
@@ -509,37 +509,93 @@ CREATE INDEX idx_transaction_items_txn ON aus_transaction_items(transaction_id);
 
 ## 🌊 **Live Data Streaming - Real-Time Testing**
 
-**Stream continuous Australian POS transaction data for real-time analytics and testing:**
+**Stream continuous Australian POS transaction data with multiple output formats and direct database connectivity!**
 
-### 🚀 **Streaming with Beautiful Output**
+### 🚀 **Streaming Formats Available**
+
+| Format | Description | Use Case |
+|--------|-------------|----------|
+| **Console** | Real-time colored terminal output | Monitoring, development, demos |
+| **JSON** | JSON Lines format to file or console | API testing, data pipelines, logging |
+| **CSV** | CSV format with headers | Excel analysis, spreadsheet integration |
+| **Parquet** | Columnar Parquet format | Big data analytics, data lakes |
+| **Database** | Direct database insertion | Live analytics, production systems |
+
+### 📊 **Streaming Examples**
 
 ```bash
-# 🌊 Stream to console with real-time display
-aus-pos-gen stream --rate 2.0 --format console
+# 🌊 Live console monitoring with beautiful output
+aus-pos-gen stream --format console --rate 2.0 --businesses 5
 
-# 📊 Stream JSON for API testing
-aus-pos-gen stream --rate 1.5 --format json --duration 300
+# 📄 Stream to CSV for Excel analysis
+aus-pos-gen stream --format csv --output live_data.csv --rate 5.0 --duration 300
 
-# 🎯 High-frequency testing
-aus-pos-gen stream --rate 10.0 --format json --output test_stream.json
+# 🏗️ Stream to Parquet for big data processing
+aus-pos-gen stream --format parquet --output stream_data.parquet --rate 1.0 --duration 600
+
+# 🗄️ Stream directly to database (PostgreSQL, MySQL, SQLite)
+aus-pos-gen stream --format database --db-type postgresql --db-host localhost --db-name live_pos --rate 3.0
 ```
 
-**What You'll See:**
+### 🎨 **What You'll See - Beautiful Streaming Output**
+
 ```
-🌊 Starting live data stream...
-📊 Rate: 2.0 transactions/second
-⏱️  Duration: Continuous (press Ctrl+C to stop)
+╭── 🚀 Live Data Streaming Started ──╮
+│                                    │
+│  🌊 Australian POS Data Streamer   │
+│  Real-time Transaction Streaming   │
+│                                    │
+│  📊 Rate: 2.0 transactions/second  │
+│  🏪 Businesses: 3                  │
+│  👥 Customers: 500                 │
+│  📋 Format: CONSOLE                │
+│  ⏱️  Duration: Infinite             │
+│  🌱 Seed: 42                       │
+│                                    │
+╰────────────────────────────────────╯
 
-💳 Transaction #1 | $45.67 | EFTPOS | Customer: CUST001
-💳 Transaction #2 | $23.45 | CONTACTLESS | Customer: CUST045
-💳 Transaction #3 | $89.12 | CREDIT_CARD | Customer: CUST112
-💳 Transaction #4 | $12.34 | CASH | Customer: CUST067
+18:52:31 47 687 014 626 → $89.00 (EFTPOS)
+18:52:32 62 328 588 424 → $133.10 (CASH)
+18:52:32 47 687 014 626 → $258.15 (CREDIT_CARD)
+18:52:33 71 902 294 131 → $303.65 (CONTACTLESS)
+```
 
-📈 Stream Statistics:
-   • Transactions: 4
-   • Total Value: $170.58
-   • Average TPS: 2.0
-   • Running Time: 2.0 seconds
+**Stream Summary:**
+```
+╭─── 📈 Streaming Results ───╮
+│                            │
+│  🎉 Stream Summary         │
+│                            │
+│  📊 Total Transactions: 8  │
+│  ⏱️  Duration: 4.0 seconds  │
+│  📈 Average Rate: 2.0 tps  │
+│  🎯 Target Rate: 2.0 tps   │
+│  📋 Format: CONSOLE        │
+│                            │
+╰────────────────────────────╯
+```
+
+### 🗄️ **Database Streaming Examples**
+
+```bash
+# Stream directly to SQLite database
+aus-pos-gen stream --format database --db-type sqlite --db-name live_stream.db --rate 2.0
+
+# Stream to PostgreSQL with connection string
+aus-pos-gen stream --format database \
+  --db-connection-string "postgresql://user:pass@localhost:5432/live_pos" \
+  --db-table-prefix live_ \
+  --rate 3.0
+
+# Stream to MySQL with individual parameters
+aus-pos-gen stream --format database \
+  --db-type mysql \
+  --db-host analytics.company.com \
+  --db-port 3306 \
+  --db-name streaming_pos \
+  --db-username analytics_user \
+  --db-password secure_password \
+  --rate 5.0
 ```
 
 ### 🎮 **Interactive Mode - Step-by-Step Wizard**
@@ -565,7 +621,28 @@ aus-pos-gen interactive
 
 ---
 
-## 🏗️ **Architecture & Technical Details**
+## 🏗️ **Project Structure**
+
+```
+aus-retail-data-gen/
+├── environment.yml          # Conda environment specification
+├── pyproject.toml           # Python project configuration
+├── README.md               # This file
+├── src/
+│   └── aus_pos_data_gen/    # Main package
+│       ├── __init__.py
+│       ├── cli.py          # Command-line interface with Rich UI
+│       ├── config.py       # Pydantic configuration models
+│       ├── generator.py    # Core data generation logic
+│       ├── models.py       # Pydantic data models
+│       └── validators.py   # Australian business validation
+├── scripts/                # Utility scripts
+│   ├── generate_sample_data.py
+│   └── test_db_connectivity.py
+└── tests/                  # Test suite
+    ├── __init__.py
+    └── test_validators.py
+```
 
 ### 🏢 **Core Components**
 
@@ -584,7 +661,7 @@ class Transaction(BaseModel):
 ```
 
 **Generator Classes:**
-- `POSDataGenerator` - Main data generation orchestrator
+- `POSDataGenerator` - Main data generation orchestrator with progress tracking
 - `ABNValidator` - Australian Business Number validation
 - `GSTCalculator` - GST calculations with ATO compliance
 - `AustralianAddressValidator` - State/postcode validation
@@ -753,9 +830,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Australian Taxation Office (ATO)** - For GST compliance guidelines
 - **Australian Retail Industry** - For business practice insights
-- **Rich Library** - For beautiful terminal formatting
-- **Questionary** - For interactive CLI capabilities
-- **Pydantic** - For type-safe data models
+- **Rich** - Beautiful terminal formatting and progress bars
+- **Questionary** - Interactive CLI with real-time validation
+- **Pydantic** - Type-safe data models and validation
+- **SQLAlchemy** - Database connectivity and ORM
 - **Open-source Python Community** - For excellent libraries
 
 ---
@@ -764,19 +842,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Most Common Commands
 ```bash
-# Quick start
+# Quick start - generate data with progress bars
 aus-pos-gen generate --businesses 5 --days 30
 
-# Large dataset
+# Large dataset for analytics
 aus-pos-gen generate --businesses 20 --customers 10000 --days 365 --format parquet
 
-# Interactive setup
+# Interactive guided setup
 aus-pos-gen interactive
 
-# Stream testing
-aus-pos-gen stream --rate 5.0 --duration 120
+# Real-time streaming to console
+aus-pos-gen stream --format console --rate 2.0
 
-# View capabilities
+# Stream to CSV for Excel analysis
+aus-pos-gen stream --format csv --output data.csv --rate 5.0 --duration 300
+
+# Stream directly to database
+aus-pos-gen stream --format database --db-type sqlite --db-name live.db --rate 3.0
+
+# View system capabilities
 aus-pos-gen info
 ```
 

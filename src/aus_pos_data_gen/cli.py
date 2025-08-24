@@ -43,8 +43,20 @@ def stream(
     customers: int = typer.Option(500, "--customers", "-c", help="Number of customers in the system"),
     rate: float = typer.Option(1.0, "--rate", "-r", help="Transactions per second"),
     duration: Optional[int] = typer.Option(None, "--duration", "-d", help="Stream duration in seconds (None for infinite)"),
-    format: str = typer.Option("console", "--format", "-f", help="Stream format: console, json, websocket"),
-    output: Path = typer.Option(None, "--output", "-o", help="Output file for file streaming"),
+    format: str = typer.Option("console", "--format", "-f", help="Stream format: console, json, csv, parquet, database"),
+    output: Path = typer.Option(None, "--output", "-o", help="Output file/directory for file streaming"),
+
+    # Database options for database streaming
+    db_type: Optional[str] = typer.Option(None, "--db-type", help="Database type for database streaming: sqlite, postgresql, mysql, mariadb"),
+    db_host: Optional[str] = typer.Option(None, "--db-host", help="Database host"),
+    db_port: Optional[int] = typer.Option(None, "--db-port", help="Database port"),
+    db_name: Optional[str] = typer.Option(None, "--db-name", help="Database name"),
+    db_username: Optional[str] = typer.Option(None, "--db-username", help="Database username"),
+    db_password: Optional[str] = typer.Option(None, "--db-password", help="Database password"),
+    db_connection_string: Optional[str] = typer.Option(None, "--db-connection-string", help="Full database connection string"),
+    db_table_prefix: str = typer.Option("", "--db-table-prefix", help="Prefix for database table names"),
+    db_schema: Optional[str] = typer.Option(None, "--db-schema", help="Database schema (PostgreSQL)"),
+
     seed: int = typer.Option(42, "--seed", "-s", help="Random seed for reproducibility"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
 ):
@@ -56,13 +68,47 @@ def stream(
 
     # Logging is handled by the generator module
 
-    console.print("[bold blue]Australian POS Data Streamer[/bold blue]")
-    console.print(f"Streaming {rate} transactions/second from {businesses} businesses")
-    console.print(f"Format: {format.upper()}")
-    if duration:
-        console.print(f"Duration: {duration} seconds")
-    else:
-        console.print("[yellow]Duration: Infinite (Ctrl+C to stop)[/yellow]")
+    # Helper function to convert Decimal objects to float for JSON serialization
+    def convert_decimals_to_float(obj):
+        """Convert Decimal objects to float in nested data structures."""
+        if isinstance(obj, dict):
+            return {k: convert_decimals_to_float(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_decimals_to_float(item) for item in obj]
+        else:
+            try:
+                from decimal import Decimal
+                if isinstance(obj, Decimal):
+                    return float(obj)
+            except ImportError:
+                pass
+        return obj
+
+    # Enhanced welcome with Rich panel
+    from rich.text import Text
+    from rich.panel import Panel
+    from rich.align import Align
+
+    welcome_text = Text()
+    welcome_text.append("🌊 Australian POS Data Streamer\n", style="bold cyan")
+    welcome_text.append("Real-time Transaction Streaming\n\n", style="bold yellow")
+    welcome_text.append(f"📊 Rate: {rate} transactions/second\n", style="green")
+    welcome_text.append(f"🏪 Businesses: {businesses}\n", style="blue")
+    welcome_text.append(f"👥 Customers: {customers}\n", style="magenta")
+    welcome_text.append(f"📋 Format: {format.upper()}\n", style="cyan")
+    welcome_text.append(f"⏱️  Duration: {duration if duration else 'Infinite'} seconds\n", style="yellow")
+    welcome_text.append(f"🌱 Seed: {seed}", style="red")
+
+    welcome_panel = Panel.fit(
+        Align.center(
+            welcome_text
+        ),
+        title="[bold magenta]🚀 Live Data Streaming Started[/bold magenta]",
+        border_style="blue",
+        padding=(1, 2)
+    )
+
+    console.print(welcome_panel)
     console.print()
 
     # Create configuration
@@ -76,15 +122,117 @@ def stream(
     # Initialize generator
     generator = POSDataGenerator(config)
 
+    # Initialize streaming components
+    db_engine = None
+    csv_writer = None
+    parquet_buffer = None
+
+    # Set up database streaming if requested
+    if format.lower() == "database":
+        if not any([db_type, db_connection_string]):
+            console.print("[red]❌ Error: Database streaming requires --db-type or --db-connection-string[/red]")
+            raise typer.Exit(1)
+
+        with console.status("[bold green]Setting up database connection...[/bold green]") as status:
+            try:
+                from .config import DatabaseConfig
+
+                db_config = DatabaseConfig(
+                    db_type=db_type,
+                    host=db_host,
+                    port=db_port,
+                    database=db_name,
+                    username=db_username,
+                    password=db_password,
+                    connection_string=db_connection_string,
+                    table_prefix=db_table_prefix,
+                    schema=db_schema
+                )
+
+                # Test database connection and create tables
+                from sqlalchemy import create_engine, MetaData, Table, Column, String, DateTime, Float, Text, Integer
+                db_engine = create_engine(db_config.get_connection_string())
+
+                # Test connection
+                with db_engine.connect() as conn:
+                    console.print("[green]✅ Database connection successful![/green]")
+
+                # Create transactions table if it doesn't exist
+                metadata = MetaData()
+                transactions_table = Table(
+                    f"{db_table_prefix}transactions",
+                    metadata,
+                    Column('id', Integer, primary_key=True, autoincrement=True),
+                    Column('transaction_id', String(50), unique=True, nullable=False),
+                    Column('store_id', String(10)),
+                    Column('workstation_id', String(10)),
+                    Column('employee_id', String(20)),
+                    Column('transaction_type', String(20)),
+                    Column('business_day_date', DateTime),
+                    Column('transaction_datetime', DateTime),
+                    Column('receipt_number', String(20)),
+                    Column('customer_id', String(20)),
+                    Column('subtotal_ex_gst', Float),
+                    Column('gst_amount', Float),
+                    Column('total_inc_gst', Float),
+                    Column('payment_method', String(30)),
+                    Column('tender_amount', Float),
+                    Column('change_amount', Float),
+                    Column('currency_code', String(3)),
+                    Column('operator_id', String(20)),
+                    Column('shift_id', String(10)),
+                    Column('business_abn', String(15)),
+                    Column('items', Text),
+                    Column('created_at', DateTime, default=datetime.now)
+                )
+
+                # Create table
+                metadata.create_all(db_engine)
+                console.print(f"[green]✅ Database table '{db_table_prefix}transactions' ready![/green]")
+
+            except Exception as e:
+                console.print(f"[red]❌ Database connection failed: {e}[/red]")
+                raise typer.Exit(1)
+
+    # Set up CSV streaming if requested
+    elif format.lower() == "csv":
+        if not output:
+            console.print("[red]❌ Error: CSV streaming requires --output file path[/red]")
+            raise typer.Exit(1)
+
+        import csv
+        csv_file = open(output, 'w', newline='')
+        csv_writer = csv.writer(csv_file)
+
+        # Write CSV header
+        csv_writer.writerow([
+            'transaction_id', 'store_id', 'workstation_id', 'employee_id',
+            'transaction_type', 'business_day_date', 'transaction_datetime',
+            'receipt_number', 'customer_id', 'subtotal_ex_gst', 'gst_amount',
+            'total_inc_gst', 'payment_method', 'tender_amount', 'change_amount',
+            'currency_code', 'operator_id', 'shift_id', 'business_abn'
+        ])
+        console.print(f"[green]✅ CSV file opened: {output}[/green]")
+
+    # Set up Parquet streaming if requested
+    elif format.lower() == "parquet":
+        if not output:
+            console.print("[red]❌ Error: Parquet streaming requires --output file path[/red]")
+            raise typer.Exit(1)
+
+        import pandas as pd
+        parquet_buffer = []
+        console.print(f"[green]✅ Parquet streaming to: {output}[/green]")
+
     # Generate initial data
-    with console.status("[bold green]Initializing stream data...") as status:
+    with console.status("[bold green]Initializing stream data...[/bold green]") as status:
         result = generator.generate_all_data(businesses, customers)
 
     businesses_list = list(generator.businesses)
     customers_list = list(generator.customers)
 
-    console.print(f"[green]✓ Initialized with {len(businesses_list)} businesses and {len(customers_list)} customers[/green]")
-    console.print("[green]✓ Starting live transaction stream...[/green]")
+    console.print(f"[green]✅ Initialized with {len(businesses_list)} businesses and {len(customers_list)} customers[/green]")
+    console.print(f"[green]🚀 Starting live {format.upper()} transaction stream...[/green]")
     console.print()
 
     # Stream transactions
@@ -122,6 +270,93 @@ def stream(
                 else:
                     console.print(json.dumps(transaction_data, indent=2, default=str))
 
+            elif format.lower() == "csv":
+                if csv_writer:
+                    csv_writer.writerow([
+                        transaction.transaction_id,
+                        transaction.store_id,
+                        transaction.workstation_id,
+                        transaction.employee_id,
+                        transaction.transaction_type,
+                        transaction.business_day_date.isoformat() if transaction.business_day_date else None,
+                        transaction.transaction_datetime.isoformat(),
+                        transaction.receipt_number,
+                        transaction.customer_id,
+                        transaction.subtotal_ex_gst,
+                        transaction.gst_amount,
+                        transaction.total_inc_gst,
+                        transaction.payment_method,
+                        transaction.tender_amount,
+                        transaction.change_amount,
+                        transaction.currency_code,
+                        transaction.operator_id,
+                        transaction.shift_id,
+                        transaction.business_abn
+                    ])
+
+            elif format.lower() == "parquet":
+                if parquet_buffer is not None:
+                    transaction_data = transaction.dict()
+                    transaction_data["items"] = [item.dict() for item in transaction.items]
+                    parquet_buffer.append(transaction_data)
+
+                    # Flush to parquet every 100 transactions
+                    if len(parquet_buffer) >= 100:
+                        import pandas as pd
+                        df = pd.DataFrame(parquet_buffer)
+                        df.to_parquet(output, engine='pyarrow', index=False)
+                        parquet_buffer.clear()
+                        console.print(f"[dim]Flushed {100} transactions to Parquet[/dim]")
+
+            elif format.lower() == "database":
+                if db_engine:
+                    try:
+                        transaction_data = transaction.dict()
+                        # Convert Decimal objects to float for JSON serialization
+                        transaction_data = convert_decimals_to_float(transaction_data)
+                        transaction_data["items"] = [convert_decimals_to_float(item.dict()) for item in transaction.items]
+
+                        # Insert into database using text() for raw SQL
+                        from sqlalchemy import text
+                        with db_engine.connect() as conn:
+                            conn.execute(
+                                text(f"INSERT INTO {db_table_prefix}transactions (transaction_id, store_id, workstation_id, employee_id, "
+                                     f"transaction_type, business_day_date, transaction_datetime, receipt_number, "
+                                     f"customer_id, subtotal_ex_gst, gst_amount, total_inc_gst, payment_method, "
+                                     f"tender_amount, change_amount, currency_code, operator_id, shift_id, "
+                                     f"business_abn, items) VALUES (:transaction_id, :store_id, :workstation_id, :employee_id, "
+                                     f":transaction_type, :business_day_date, :transaction_datetime, :receipt_number, "
+                                     f":customer_id, :subtotal_ex_gst, :gst_amount, :total_inc_gst, :payment_method, "
+                                     f":tender_amount, :change_amount, :currency_code, :operator_id, :shift_id, "
+                                     f":business_abn, :items)"),
+                                {
+                                    'transaction_id': transaction_data['transaction_id'],
+                                    'store_id': transaction_data['store_id'],
+                                    'workstation_id': transaction_data['workstation_id'],
+                                    'employee_id': transaction_data['employee_id'],
+                                    'transaction_type': transaction_data['transaction_type'],
+                                    'business_day_date': transaction_data['business_day_date'],
+                                    'transaction_datetime': transaction_data['transaction_datetime'],
+                                    'receipt_number': transaction_data['receipt_number'],
+                                    'customer_id': transaction_data['customer_id'],
+                                    'subtotal_ex_gst': transaction_data['subtotal_ex_gst'],
+                                    'gst_amount': transaction_data['gst_amount'],
+                                    'total_inc_gst': transaction_data['total_inc_gst'],
+                                    'payment_method': transaction_data['payment_method'],
+                                    'tender_amount': transaction_data['tender_amount'],
+                                    'change_amount': transaction_data['change_amount'],
+                                    'currency_code': transaction_data['currency_code'],
+                                    'operator_id': transaction_data['operator_id'],
+                                    'shift_id': transaction_data['shift_id'],
+                                    'business_abn': transaction_data['business_abn'],
+                                    'items': json.dumps(transaction_data['items'])
+                                }
+                            )
+                            conn.commit()
+
+                    except Exception as e:
+                        console.print(f"[red]Database error: {e}[/red]")
+
             elif format.lower() == "websocket":
                 console.print("[red]WebSocket streaming not yet implemented[/red]")
                 break
@@ -147,15 +382,58 @@ def stream(
         console.print(f"\n[red]Stream error: {e}[/red]")
 
     finally:
+        # Clean up streaming components
+        if csv_writer and 'csv_file' in locals():
+            csv_file.close()
+            console.print(f"[green]✅ CSV file closed: {output}[/green]")
+
+        if parquet_buffer and len(parquet_buffer) > 0:
+            import pandas as pd
+            df = pd.DataFrame(parquet_buffer)
+            df.to_parquet(output, engine='pyarrow', index=False)
+            console.print(f"[green]✅ Final Parquet flush: {len(parquet_buffer)} transactions[/green]")
+
+        if db_engine:
+            db_engine.dispose()
+            console.print("[green]✅ Database connection closed[/green]")
+
+        # Calculate final statistics
         elapsed = time.time() - start_time
         final_rate = transaction_count / elapsed if elapsed > 0 else 0
 
-        console.print("\n[bold green]Stream Summary:[/bold green]")
-        console.print(f"  Total Transactions: {transaction_count}")
-        console.print(f"  Duration: {elapsed:.1f} seconds")
-        console.print(f"  Average Rate: {final_rate:.1f} transactions/second")
-        console.print(f"  Target Rate: {rate} transactions/second")
-        console.print("\n[green]Stream completed successfully![/green]")
+        # Enhanced stream summary
+        summary_panel = Panel.fit(
+            Align.center(
+                Text.from_markup(
+                    "[bold green]🎉 Stream Summary[/bold green]\n\n"
+                    f"📊 [cyan]Total Transactions:[/cyan] {transaction_count}\n"
+                    f"⏱️  [yellow]Duration:[/yellow] {elapsed:.1f} seconds\n"
+                    f"📈 [green]Average Rate:[/green] {final_rate:.1f} tps\n"
+                    f"🎯 [blue]Target Rate:[/blue] {rate} tps\n"
+                    f"📋 [magenta]Format:[/magenta] {format.upper()}\n"
+                    f"🏪 [red]Businesses:[/red] {len(businesses_list)}\n"
+                    f"👥 [red]Customers:[/red] {len(customers_list)}"
+                )
+            ),
+            title="[bold cyan]📈 Streaming Results[/bold cyan]",
+            border_style="green",
+            padding=(1, 2)
+        )
+
+        console.print()
+        console.print(summary_panel)
+        console.print()
+
+        if format.lower() == "csv" and output:
+            console.print(f"[green]💾 CSV file saved: {output}[/green]")
+        elif format.lower() == "parquet" and output:
+            console.print(f"[green]💾 Parquet file saved: {output}[/green]")
+        elif format.lower() == "json" and output:
+            console.print(f"[green]💾 JSON file saved: {output}[/green]")
+        elif format.lower() == "database":
+            console.print("[green]💾 Data streamed to database successfully![/green]")
+
+        console.print("[green]✅ Stream completed successfully![/green]")
 
 
 @app.command()
@@ -1008,38 +1286,103 @@ def info():
 
 @app.command()
 def stream_formats():
-    """List all available streaming formats and their descriptions."""
-    from rich.table import Table
+    """📊 List all available streaming formats and their descriptions with database options."""
 
-    table = Table(title="Available Streaming Formats")
-    table.add_column("Format", style="cyan", no_wrap=True)
-    table.add_column("Description", style="green")
-    table.add_column("Use Case", style="yellow")
-
-    table.add_row(
-        "console",
-        "Real-time console output with colored formatting",
-        "Monitoring, development, demos"
+    # File streaming formats table
+    file_table = Table(
+        title="[bold cyan]📁 File Streaming Formats[/bold cyan]",
+        show_header=True,
+        header_style="bold magenta",
+        show_lines=True
     )
-    table.add_row(
-        "json",
-        "JSON lines to console or file",
-        "API testing, data pipelines, logging"
+    file_table.add_column("Format", style="cyan", no_wrap=True)
+    file_table.add_column("Extension", style="blue", no_wrap=True)
+    file_table.add_column("Description", style="white")
+    file_table.add_column("Use Case", style="green")
+
+    file_formats = [
+        ("console", "N/A", "Real-time console output with colored formatting", "Monitoring, development, demos"),
+        ("json", ".json", "JSON lines to console or file", "API testing, data pipelines, logging"),
+        ("csv", ".csv", "CSV format with headers", "Data analysis, Excel integration"),
+        ("parquet", ".parquet", "Columnar Parquet format", "Big data, analytics, data lakes"),
+    ]
+
+    for fmt, ext, desc, use in file_formats:
+        file_table.add_row(fmt, ext, desc, use)
+
+    # Database streaming formats table
+    db_table = Table(
+        title="[bold cyan]🗄️ Database Streaming Formats[/bold cyan]",
+        show_header=True,
+        header_style="bold blue",
+        show_lines=True
     )
-    table.add_row(
-        "websocket",
-        "WebSocket streaming (planned)",
-        "Real-time dashboards, web applications"
+    db_table.add_column("Format", style="cyan", no_wrap=True)
+    db_table.add_column("Databases", style="blue", no_wrap=True)
+    db_table.add_column("Description", style="white")
+    db_table.add_column("Use Case", style="green")
+
+    db_formats = [
+        ("database", "PostgreSQL, MySQL, MariaDB, SQLite", "Direct database insertion with SQLAlchemy", "Production ETL, analytics, live dashboards"),
+    ]
+
+    for fmt, dbs, desc, use in db_formats:
+        db_table.add_row(fmt, dbs, desc, use)
+
+    # Planned formats table
+    planned_table = Table(
+        title="[bold cyan]🚧 Planned Streaming Formats[/bold cyan]",
+        show_header=True,
+        header_style="bold yellow",
+        show_lines=True
+    )
+    planned_table.add_column("Format", style="cyan", no_wrap=True)
+    planned_table.add_column("Description", style="white")
+    planned_table.add_column("Use Case", style="yellow")
+
+    planned_formats = [
+        ("websocket", "Real-time WebSocket streaming", "Live dashboards, web applications"),
+        ("kafka", "Apache Kafka message streaming", "Event streaming, microservices"),
+        ("redis", "Redis pub/sub streaming", "Caching, real-time analytics"),
+    ]
+
+    for fmt, desc, use in planned_formats:
+        planned_table.add_row(fmt, desc, use)
+
+    console.print(file_table)
+    console.print()
+    console.print(db_table)
+    console.print()
+    console.print(planned_table)
+    console.print()
+
+    # Usage examples panel
+    usage_panel = Panel.fit(
+        Align.left(
+            Text.from_markup(
+                "[bold green]📝 File Streaming Examples:[/bold green]\n\n"
+                "[cyan]aus-pos-gen stream --format console --rate 2.0[/cyan]  [dim]# Live console monitoring[/dim]\n"
+                "[cyan]aus-pos-gen stream --format json --output live_data.json --rate 1.0[/cyan]  [dim]# JSON file streaming[/dim]\n"
+                "[cyan]aus-pos-gen stream --format csv --output transactions.csv --rate 5.0[/cyan]  [dim]# CSV for analysis[/dim]\n"
+                "[cyan]aus-pos-gen stream --format parquet --output stream_data.parquet --duration 300[/cyan]  [dim]# Parquet for big data[/dim]\n\n"
+                "[bold yellow]🗄️ Database Streaming Examples:[/bold yellow]\n\n"
+                "[cyan]aus-pos-gen stream --format database --db-type postgresql --db-host localhost --db-name pos_stream[/cyan]\n"
+                "[cyan]aus-pos-gen stream --format database --db-type mysql --db-host analytics.company.com --db-port 3306</cyan]\n"
+                "[cyan]aus-pos-gen stream --format database --db-connection-string 'sqlite:///live_stream.db' --db-table-prefix live_</cyan>\n\n"
+                "[bold blue]⚡ Performance Tips:[/bold blue]\n\n"
+                "[dim]• CSV: Best for Excel/Spreadsheet analysis[/dim]\n"
+                "[dim]• JSON: Perfect for API testing and logging[/dim]\n"
+                "[dim]• Parquet: Optimized for big data processing[/dim]\n"
+                "[dim]• Database: Direct integration with analytics systems[/dim]\n"
+                "[dim]• Console: Great for development and monitoring[/dim]"
+            )
+        ),
+        title="[bold magenta]💡 Streaming Usage Guide[/bold magenta]",
+        border_style="green",
+        padding=(1, 2)
     )
 
-    console.print(table)
-
-    console.print("\n[bold]Usage:[/bold]")
-    console.print("  aus-pos-gen stream --format <format> [other options]")
-    console.print("\n[bold]Examples:[/bold]")
-    console.print("  aus-pos-gen stream --format console --rate 1.0")
-    console.print("  aus-pos-gen stream --format json --output stream.json")
-    console.print("  aus-pos-gen stream --rate 0.5 --duration 300")  # 2 tpm for 5 minutes
+    console.print(usage_panel)
 
 
 @app.command()

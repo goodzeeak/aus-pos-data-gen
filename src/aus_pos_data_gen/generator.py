@@ -14,6 +14,8 @@ from typing import List, Dict, Optional, Tuple, Iterator
 from faker import Faker
 from loguru import logger
 from rich.progress import Progress, TaskID
+from rich.progress import TextColumn, BarColumn, TimeRemainingColumn
+from rich.console import Console
 
 from .config import POSGeneratorConfig, AustralianStates, ReturnRates, DatabaseConfig
 from .models import (
@@ -151,7 +153,7 @@ class POSDataGenerator:
             },
         }
 
-    def generate_businesses(self, count: int = 5) -> List[Business]:
+    def generate_businesses(self, count: int = 5, progress_callback=None) -> List[Business]:
         """Generate Australian businesses with proper ABNs."""
         logger.info("Generating {} businesses", count)
         businesses = []
@@ -194,6 +196,10 @@ class POSDataGenerator:
                 businesses.append(business)
                 logger.debug(f"Generated business {i+1}: {business.business_name}")
 
+                # Update progress if callback provided
+                if progress_callback:
+                    progress_callback()
+
             except Exception as e:
                 logger.error(f"Error generating business {i+1}: {e}")
                 raise
@@ -202,7 +208,7 @@ class POSDataGenerator:
         logger.info("Generated {} businesses", len(businesses))
         return businesses
 
-    def generate_customers(self, count: int = 1000) -> List[Customer]:
+    def generate_customers(self, count: int = 1000, progress_callback=None) -> List[Customer]:
         """Generate Australian customers with realistic demographics."""
         logger.info("Generating {} customers", count)
         customers = []
@@ -244,6 +250,10 @@ class POSDataGenerator:
                 customer_abn=ABNValidator.generate_valid_abn() if customer_type == "BUSINESS" else None
             )
             customers.append(customer)
+
+            # Update progress if callback provided
+            if progress_callback:
+                progress_callback()
 
         self.customers = customers
         logger.info("Generated {} customers", len(customers))
@@ -429,16 +439,24 @@ class POSDataGenerator:
         """Generate complete dataset with businesses, customers, and transactions."""
         logger.info("Starting complete data generation...")
 
-        with Progress() as progress:
+        # Use Rich progress bars for visual feedback
+        console = Console()
+        with Progress(
+            TextColumn("[bold blue]{task.description}[/bold blue]"),
+            BarColumn(complete_style="green"),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeRemainingColumn(),
+            console=console,
+            auto_refresh=True,
+            refresh_per_second=10
+        ) as progress:
             # Generate businesses
             business_task = progress.add_task("Generating businesses...", total=business_count)
-            self.generate_businesses(business_count)
-            progress.update(business_task, completed=business_count)
+            self.generate_businesses(business_count, lambda: progress.update(business_task, advance=1))
 
             # Generate customers
             customer_task = progress.add_task("Generating customers...", total=customer_count)
-            self.generate_customers(customer_count)
-            progress.update(customer_task, completed=customer_count)
+            self.generate_customers(customer_count, lambda: progress.update(customer_task, advance=1))
 
             # Generate transactions for each business and date
             total_dates = sum(1 for _ in self.generate_transaction_date_range())
