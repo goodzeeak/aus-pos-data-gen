@@ -43,7 +43,7 @@ def stream(
     customers: int = typer.Option(500, "--customers", "-c", help="Number of customers in the system"),
     rate: float = typer.Option(1.0, "--rate", "-r", help="Transactions per second"),
     duration: Optional[int] = typer.Option(None, "--duration", "-d", help="Stream duration in seconds (None for infinite)"),
-    format: str = typer.Option("console", "--format", "-f", help="Stream format: console, json, csv, parquet, database"),
+    format: str = typer.Option("console", "--format", "-f", help="Stream format: console, json, csv, xlsx, parquet, database"),
     output: Path = typer.Option(None, "--output", "-o", help="Output file/directory for file streaming"),
 
     # Database options for database streaming
@@ -126,6 +126,7 @@ def stream(
     db_engine = None
     csv_writer = None
     parquet_buffer = None
+    xlsx_buffer = None
 
     # Set up database streaming if requested
     if format.lower() == "database":
@@ -224,6 +225,16 @@ def stream(
         parquet_buffer = []
         console.print(f"[green]✅ Parquet streaming to: {output}[/green]")
 
+    # Set up Excel streaming if requested
+    elif format.lower() == "xlsx":
+        if not output:
+            console.print("[red]❌ Error: Excel streaming requires --output file path[/red]")
+            raise typer.Exit(1)
+
+        import pandas as pd
+        xlsx_buffer = []
+        console.print(f"[green]✅ Excel streaming to: {output}[/green]")
+
     # Generate initial data
     with console.status("[bold green]Initializing stream data...[/bold green]") as status:
         result = generator.generate_all_data(businesses, customers)
@@ -307,6 +318,31 @@ def stream(
                         df.to_parquet(output, engine='pyarrow', index=False)
                         parquet_buffer.clear()
                         console.print(f"[dim]Flushed {100} transactions to Parquet[/dim]")
+
+            elif format.lower() == "xlsx":
+                if xlsx_buffer is not None:
+                    transaction_data = transaction.dict()
+                    transaction_data["items"] = [item.dict() for item in transaction.items]
+                    xlsx_buffer.append(transaction_data)
+
+                    # Flush to Excel every 100 transactions
+                    if len(xlsx_buffer) >= 100:
+                        import pandas as pd
+                        df = pd.DataFrame(xlsx_buffer)
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            # Transactions sheet
+                            df.to_excel(writer, sheet_name='transactions', index=False)
+                            # Items sheet (flatten items)
+                            items_data = []
+                            for transaction in xlsx_buffer:
+                                for item in transaction['items']:
+                                    item['parent_transaction_id'] = transaction['transaction_id']
+                                    items_data.append(item)
+                            if items_data:
+                                items_df = pd.DataFrame(items_data)
+                                items_df.to_excel(writer, sheet_name='transaction_items', index=False)
+                        xlsx_buffer.clear()
+                        console.print(f"[dim]Flushed {100} transactions to Excel[/dim]")
 
             elif format.lower() == "database":
                 if db_engine:
@@ -393,6 +429,23 @@ def stream(
             df.to_parquet(output, engine='pyarrow', index=False)
             console.print(f"[green]✅ Final Parquet flush: {len(parquet_buffer)} transactions[/green]")
 
+        if xlsx_buffer and len(xlsx_buffer) > 0:
+            import pandas as pd
+            df = pd.DataFrame(xlsx_buffer)
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Transactions sheet
+                df.to_excel(writer, sheet_name='transactions', index=False)
+                # Items sheet (flatten items)
+                items_data = []
+                for transaction in xlsx_buffer:
+                    for item in transaction['items']:
+                        item['parent_transaction_id'] = transaction['transaction_id']
+                        items_data.append(item)
+                if items_data:
+                    items_df = pd.DataFrame(items_data)
+                    items_df.to_excel(writer, sheet_name='transaction_items', index=False)
+            console.print(f"[green]✅ Final Excel flush: {len(xlsx_buffer)} transactions[/green]")
+
         if db_engine:
             db_engine.dispose()
             console.print("[green]✅ Database connection closed[/green]")
@@ -426,6 +479,8 @@ def stream(
 
         if format.lower() == "csv" and output:
             console.print(f"[green]💾 CSV file saved: {output}[/green]")
+        elif format.lower() == "xlsx" and output:
+            console.print(f"[green]💾 Excel file saved: {output}[/green]")
         elif format.lower() == "parquet" and output:
             console.print(f"[green]💾 Parquet file saved: {output}[/green]")
         elif format.lower() == "json" and output:
@@ -1304,6 +1359,7 @@ def stream_formats():
         ("console", "N/A", "Real-time console output with colored formatting", "Monitoring, development, demos"),
         ("json", ".json", "JSON lines to console or file", "API testing, data pipelines, logging"),
         ("csv", ".csv", "CSV format with headers", "Data analysis, Excel integration"),
+        ("xlsx", ".xlsx", "Excel workbook with multiple sheets", "Business reporting, presentations"),
         ("parquet", ".parquet", "Columnar Parquet format", "Big data, analytics, data lakes"),
     ]
 

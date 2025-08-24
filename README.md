@@ -518,6 +518,7 @@ CREATE INDEX idx_transaction_items_txn ON aus_transaction_items(transaction_id);
 | **Console** | Real-time colored terminal output | Monitoring, development, demos |
 | **JSON** | JSON Lines format to file or console | API testing, data pipelines, logging |
 | **CSV** | CSV format with headers | Excel analysis, spreadsheet integration |
+| **XLSX** | Excel workbook with multiple sheets | Business reporting, presentations |
 | **Parquet** | Columnar Parquet format | Big data analytics, data lakes |
 | **Database** | Direct database insertion | Live analytics, production systems |
 
@@ -529,6 +530,9 @@ aus-pos-gen stream --format console --rate 2.0 --businesses 5
 
 # 📄 Stream to CSV for Excel analysis
 aus-pos-gen stream --format csv --output live_data.csv --rate 5.0 --duration 300
+
+# 📊 Stream to Excel for business reporting
+aus-pos-gen stream --format xlsx --output live_report.xlsx --rate 3.0 --duration 180
 
 # 🏗️ Stream to Parquet for big data processing
 aus-pos-gen stream --format parquet --output stream_data.parquet --rate 1.0 --duration 600
