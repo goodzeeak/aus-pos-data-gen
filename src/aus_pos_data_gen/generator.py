@@ -944,247 +944,50 @@ class POSDataGenerator:
         return db_file
 
     def export_to_database(self, db_config: DatabaseConfig) -> Dict[str, str]:
-        """Export all data to external database using SQLAlchemy."""
-        from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, DateTime, Text, Boolean, JSON
-        from sqlalchemy.dialects.postgresql import JSON as PGJSON
-        from sqlalchemy.dialects.mysql import JSON as MyJSON
-        import pandas as pd
-
-        logger.debug(f"Exporting data to {db_config.db_type} database...")
+        """Export all data to external database using enhanced database manager."""
+        from .database_manager import EnhancedDatabaseManager
+        
+        logger.debug(f"Exporting data to {db_config.db_type} database using enhanced manager...")
 
         try:
-            # Create database engine
-            engine = create_engine(
-                db_config.get_connection_string(),
-                pool_size=db_config.pool_size,
-                max_overflow=db_config.max_overflow,
-                echo=db_config.echo
-            )
-
-            # Test connection
-            with engine.connect() as conn:
-                logger.debug("✅ Database connection successful")
-
-            # Define table schemas
-            metadata = MetaData()
-
-            # Businesses table
-            businesses_table = Table(
-                db_config.get_table_name('businesses'),
-                metadata,
-                Column('store_id', String(10), primary_key=True),
-                Column('business_name', String(255)),
-                Column('abn', String(15)),
-                Column('acn', String(15)),
-                Column('trading_name', String(255)),
-                Column('store_address', String(255)),
-                Column('suburb', String(100)),
-                Column('state', String(5)),
-                Column('postcode', String(10)),
-                Column('phone', String(20)),
-                Column('email', String(255)),
-                Column('gst_registered', Boolean),
-                Column('pos_system_type', String(50)),
-                Column('terminal_count', Integer),
-                schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-            )
-
-            # Customers table
-            customers_table = Table(
-                db_config.get_table_name('customers'),
-                metadata,
-                Column('customer_id', String(20), primary_key=True),
-                Column('customer_type', String(20)),
-                Column('first_name', String(100)),
-                Column('last_name', String(100)),
-                Column('email', String(255)),
-                Column('phone', String(20)),
-                Column('date_of_birth', DateTime),
-                Column('gender', String(10)),
-                Column('address_line_1', String(255)),
-                Column('address_line_2', String(255)),
-                Column('suburb', String(100)),
-                Column('state', String(5)),
-                Column('postcode', String(10)),
-                Column('loyalty_member', Boolean),
-                Column('loyalty_points', Integer),
-                Column('registration_date', DateTime),
-                schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-            )
-
-            # Transactions table
-            json_type = JSON
-            if db_config.db_type == 'postgresql':
-                json_type = PGJSON
-            elif db_config.db_type in ('mysql', 'mariadb'):
-                json_type = MyJSON
-
-            transactions_table = Table(
-                db_config.get_table_name('transactions'),
-                metadata,
-                Column('transaction_id', String(30), primary_key=True),
-                Column('store_id', String(10)),
-                Column('workstation_id', String(10)),
-                Column('employee_id', String(10)),
-                Column('transaction_type', String(20)),
-                Column('business_day_date', DateTime),
-                Column('transaction_datetime', DateTime),
-                Column('sequence_number', Integer),
-                Column('receipt_number', String(20)),
-                Column('customer_id', String(20)),
-                Column('subtotal_ex_gst', Float),
-                Column('gst_amount', Float),
-                Column('total_inc_gst', Float),
-                Column('payment_method', String(30)),
-                Column('tender_amount', Float),
-                Column('change_amount', Float),
-                Column('currency_code', String(5)),
-                Column('operator_id', String(10)),
-                Column('shift_id', String(10)),
-                Column('business_abn', String(15)),
-                Column('items', json_type),
-                schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-            )
-
-            # Transaction items table
-            transaction_items_table = Table(
-                db_config.get_table_name('transaction_items'),
-                metadata,
-                Column('transaction_id', String(30)),
-                Column('line_number', Integer),
-                Column('item_type', String(20)),
-                Column('product_id', String(20)),
-                Column('sku', String(50)),
-                Column('barcode', String(50)),
-                Column('product_name', String(255)),
-                Column('category', String(50)),
-                Column('brand', String(100)),
-                Column('quantity', Integer),
-                Column('unit_price_ex_gst', Float),
-                Column('unit_price_inc_gst', Float),
-                Column('line_subtotal_ex_gst', Float),
-                Column('line_gst_amount', Float),
-                Column('line_total_inc_gst', Float),
-                Column('gst_code', String(20)),
-                Column('discount_amount', Float),
-                Column('discount_type', String(20)),
-                Column('promotion_id', String(20)),
-                schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-            )
-
-            # Returns table
-            returns_table = Table(
-                db_config.get_table_name('returns'),
-                metadata,
-                Column('return_id', String(30), primary_key=True),
-                Column('original_transaction_id', String(30)),
-                Column('original_receipt_number', String(20)),
-                Column('return_date', DateTime),
-                Column('return_time', DateTime),
-                Column('return_reason_code', String(20)),
-                Column('return_reason_description', String(255)),
-                Column('returned_by_customer_id', String(20)),
-                Column('processed_by_employee_id', String(10)),
-                Column('refund_method', String(30)),
-                Column('refund_amount', Float),
-                Column('store_credit_issued', Float),
-                Column('restocking_fee', Float),
-                Column('condition_code', String(20)),
-                Column('original_purchase_date', DateTime),
-                schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-            )
-
-            # Create tables
-            metadata.create_all(engine)
-            logger.debug("✅ Database tables created successfully")
-
-            # Export data using pandas
-            exported_tables = {}
-
-            # Export businesses
-            if self.businesses:
-                businesses_df = pd.DataFrame([b.model_dump() for b in self.businesses])
-                businesses_df.to_sql(
-                    businesses_table.name,
-                    engine,
-                    if_exists='replace',
-                    index=False,
-                    schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
+            # Use enhanced database manager with optimized settings
+            with EnhancedDatabaseManager(
+                db_config=db_config,
+                batch_size=1000,  # Larger batch size for bulk operations
+                batch_timeout=60  # Longer timeout for bulk operations
+            ) as db_manager:
+                
+                # Perform health check
+                health = db_manager.health_check()
+                if health['status'] != 'healthy':
+                    raise Exception(f"Database health check failed: {health.get('error', 'Unknown error')}")
+                
+                logger.debug(f"✅ Database health check passed (response time: {health['response_time_ms']:.2f}ms)")
+                
+                # Export all data using bulk insert
+                results = db_manager.insert_bulk_data(
+                    businesses=self.businesses,
+                    customers=self.customers,
+                    transactions=self.transactions,
+                    returns=self.returns
                 )
-                exported_tables['businesses'] = businesses_table.name
-                logger.debug(f"✅ Exported {len(businesses_df)} businesses")
-
-            # Export customers
-            if self.customers:
-                customers_df = pd.DataFrame([c.model_dump() for c in self.customers])
-                customers_df.to_sql(
-                    customers_table.name,
-                    engine,
-                    if_exists='replace',
-                    index=False,
-                    schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-                )
-                exported_tables['customers'] = customers_table.name
-                logger.debug(f"✅ Exported {len(customers_df)} customers")
-
-            # Export transactions
-            if self.transactions:
-                transactions_data = []
-                for transaction in self.transactions:
-                    tx_dict = transaction.model_dump()
-                    tx_dict["items"] = [item.model_dump() for item in transaction.items]
-                    transactions_data.append(tx_dict)
-
-                transactions_df = pd.DataFrame(transactions_data)
-                transactions_df.to_sql(
-                    transactions_table.name,
-                    engine,
-                    if_exists='replace',
-                    index=False,
-                    schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-                )
-                exported_tables['transactions'] = transactions_table.name
-                logger.debug(f"✅ Exported {len(transactions_df)} transactions")
-
-            # Export transaction items
-            if self.transactions:
-                line_items_data = []
-                for transaction in self.transactions:
-                    for item in transaction.items:
-                        line_items_data.append(item.model_dump())
-
-                line_items_df = pd.DataFrame(line_items_data)
-                line_items_df.to_sql(
-                    transaction_items_table.name,
-                    engine,
-                    if_exists='replace',
-                    index=False,
-                    schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-                )
-                exported_tables['transaction_items'] = transaction_items_table.name
-                logger.debug(f"✅ Exported {len(line_items_df)} transaction items")
-
-            # Export returns
-            if self.returns:
-                returns_df = pd.DataFrame([r.model_dump() for r in self.returns])
-                returns_df.to_sql(
-                    returns_table.name,
-                    engine,
-                    if_exists='replace',
-                    index=False,
-                    schema=db_config.db_schema if db_config.db_type == 'postgresql' else None
-                )
-                exported_tables['returns'] = returns_table.name
-                logger.debug(f"✅ Exported {len(returns_df)} returns")
-
-            # Close engine
-            engine.dispose()
-
-            logger.debug("✅ Database export completed successfully")
-            return exported_tables
+                
+                # Get final statistics
+                stats = db_manager.get_connection_stats()
+                logger.debug("✅ Database export completed successfully")
+                logger.debug(f"Export statistics: {results}")
+                logger.debug(f"Connection stats: successful_operations={stats['successful_operations']}, failed_operations={stats['failed_operations']}")
+                
+                # Return table names that were populated
+                exported_tables = {}
+                for data_type, count in results.items():
+                    if count > 0:
+                        exported_tables[data_type] = db_config.get_table_name(data_type.replace('_', '_'))
+                
+                return exported_tables
 
         except Exception as e:
-            logger.error(f"❌ Database export failed: {e}")
+            logger.error(f"❌ Enhanced database export failed: {e}")
             raise
 
     def export_to_postgresql(self, db_config: DatabaseConfig) -> Dict[str, str]:
