@@ -1,899 +1,138 @@
-# 🇦🇺 Australian POS Data Generator
+# AUS POS Data Generator
+
+Synthetic Australian POS transaction dataset generator with GST compliance, realistic business rules, and rich CLI. Generates businesses, customers, transactions, and returns in CSV/JSON/Parquet/Excel or streams directly to databases.
+
+## Features
+
+- Australian context: ABN validation, state distributions, GST codes and rounding
+- Realistic entities: Businesses, Customers, Transactions, Line Items, Returns
+- Output formats: CSV, JSON, Parquet, Excel (xlsx)
+- Streaming: Console, JSON, CSV, Parquet, Excel, Database (SQLite/Postgres/MySQL/MariaDB)
+- CLI: Batch generation, live streaming, interactive wizard
+- Strong typing/validation via Pydantic
+- Rich progress and colorful console output
+
+## Project Structure
+
+- `src/aus_pos_data_gen/`
+  - `config.py`: `POSGeneratorConfig`, `DatabaseConfig`, Australian settings
+  - `generator.py`: `POSDataGenerator` orchestration, exports
+  - `models.py`: Pydantic models (`Transaction`, `TransactionItem`, etc.)
+  - `validators.py`: ABN and GST validators/calculations
+  - `cli.py`: Typer-based CLI (`aus-pos-gen`)
+- `scripts/generate_sample_data.py`: Programmatic example
+- `data/processed/`: Default output directory (created on demand)
+- `pyproject.toml`: Packaging and entry point
+- `environment.yml`: Conda env (Python 3.11)
+- `tests/`: Test placeholders
+
+## Installation
+
+Choose one of:
+
+- Pip (Python 3.11):
+  ```bash
+  pip install -e .
+  ```
+
+- Conda environment:
+  ```bash
+  conda env create -f environment.yml
+  conda activate aus-pos-data-gen
+  pip install -e .
+  ```
+
+## Quick Start
+
+After installing, the CLI entry point `aus-pos-gen` is available.
+
+- Help
+  ```bash
+  aus-pos-gen --help
+  ```
+
+- Interactive wizard
+  ```bash
+  aus-pos-gen interactive
+  ```
+
+- Batch generation to CSV (default output `data/processed/`)
+  ```bash
+  aus-pos-gen generate --businesses 5 --customers 1000 --days 30 --format csv
+  ```
+
+- Live stream to console (1 tps)
+  ```bash
+  aus-pos-gen stream --businesses 3 --customers 500 --rate 1 --format console
+  ```
+
+- Live stream to Postgres (example)
+  ```bash
+  aus-pos-gen stream \
+    --businesses 3 --customers 500 --rate 2 --format database \
+    --db-type postgresql --db-host localhost --db-port 5432 \
+    --db-name aus_pos_data --db-username postgres --db-password <password> \
+    --db-table-prefix pos_ --db-schema public
+  ```
+
+- Write Parquet during streaming
+  ```bash
+  aus-pos-gen stream --format parquet --output stream.parquet
+  ```
+
+- Programmatic usage
+  ```python
+  from pathlib import Path
+  from datetime import datetime, timedelta
+  from aus_pos_data_gen.config import POSGeneratorConfig
+  from aus_pos_data_gen.generator import POSDataGenerator
+
+  config = POSGeneratorConfig(
+      start_date=datetime.now() - timedelta(days=30),
+      end_date=datetime.now(),
+      output_dir=Path("sample_data"),
+  )
+  gen = POSDataGenerator(config)
+  result = gen.generate_all_data(business_count=3, customer_count=500)
+  gen.export_to_csv()
+  gen.export_line_items()
+  ```
+
+## Outputs
 
-**Professional synthetic Australian retail transaction data with enterprise-grade CLI, real-time streaming, and direct database connectivity.**
+- Businesses: `businesses.(csv|json)`
+- Customers: `customers.(csv|json)`
+- Transactions: `transactions.(csv|json)` with nested `items`
+- Line items: `transaction_items.csv` (flattened)
+- Returns: `returns.(csv|json)`
 
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Conda](https://img.shields.io/badge/Conda-Ready-green.svg)](https://docs.conda.io/)
-[![Rich CLI](https://img.shields.io/badge/CLI-Rich%20Enhanced-cyan.svg)](https://rich.readthedocs.io/)
-[![Streaming](https://img.shields.io/badge/Streaming-Real--time-orange.svg)](#-live-data-streaming)
+## Configuration Highlights
 
-> 🎯 **Beautiful CLI • Real-time Streaming • Direct Database Export • 100% ATO Compliant**
+Key settings in `POSGeneratorConfig` (`src/aus_pos_data_gen/config.py`):
 
----
+- Date range: `start_date` to `end_date`
+- Volume: `daily_transactions`, `store_size_distribution`, `items_per_transaction`
+- Australian specifics: `payment_methods`, `states_distribution`, `product_categories`, `seasonal_multipliers`
+- Database export: `DatabaseConfig` with `get_connection_string()` for SQLite/Postgres/MySQL/MariaDB
 
-## ✨ **What Makes This Generator Special?**
+## Development
 
-### 🎨 **Beautiful, Professional CLI Interface**
-- **Rich Enhanced**: Stunning terminal output with colors, progress bars, and beautiful tables
-- **Interactive Mode**: Step-by-step guided setup with real-time validation
-- **Live Progress**: Real-time progress bars, spinners, and status indicators
-- **Professional Panels**: Organized information display with borders and styling
+- Lint/format:
+  ```bash
+  black . && isort . && flake8
+  ```
 
-### 🏢 **100% Australian Business Compliant**
-- **Valid ABN Generation**: Authentic Australian Business Numbers with proper check-digit validation
-- **GST Calculations**: Accurate GST calculations following ATO rules (10% standard rate)
-- **State & Postcode Validation**: Realistic Australian addresses with proper state-postcode matching
-- **Business Hours**: Australian retail operating hours and seasonal patterns
+- Type check:
+  ```bash
+  mypy src
+  ```
 
-### 💳 **Realistic Australian Payment Methods**
-- **EFTPOS**: 45% distribution (most common in Australia)
-- **Contactless**: 30% (Apple Pay, Google Pay, contactless cards)
-- **Credit Cards**: 15% (Visa, Mastercard, Amex)
-- **Cash**: 8% with Australian 5-cent rounding rules
-- **Buy Now Pay Later**: 2% (Afterpay, Zip, Klarna)
+- Tests & coverage:
+  ```bash
+  pytest -v --cov=aus_pos_data_gen --cov-report=term-missing
+  ```
+  HTML report: `htmlcov/index.html`
 
-### 📊 **Production-Ready Data Generation**
-- **Seasonal Patterns**: Q4 peaks (December), Q1 lows (January), weekday/weekend variations
-- **Return Rates**: Category-specific return rates (clothing: 25%, electronics: 12%, food: 3%)
-- **Customer Demographics**: Individual, business, and loyalty program members
-- **Product Catalog**: Australian retail products with proper GST classification
+## License
 
-### 🚀 **Real-Time Streaming & Database Export**
-- **Live Data Streaming**: Real-time transaction streaming to console, files, or databases
-- **Multiple Stream Formats**: Console, CSV, JSON, Parquet, and direct database insertion
-- **Direct Database Export**: Export directly to PostgreSQL, MySQL, MariaDB, SQLite
-- **Professional CLI**: Rich-enhanced interface with progress bars and beautiful panels
-- **Interactive Mode**: Guided step-by-step configuration wizard
-
----
-
-## 🚀 **Installation & Setup**
-
-### Prerequisites
-- **Conda** (Miniconda or Anaconda) - Required for environment management
-- **Python 3.11+** - Modern Python with type hints support
-- **Git** - For cloning the repository
-
-### Quick Setup (3 Steps)
-
-```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd aus-retail-data-gen
-
-# 2. Create conda environment (includes all dependencies)
-conda env create -f environment.yml
-conda activate aus-pos-data-gen
-
-# 3. Install the package
-pip install -e .
-```
-
-### 🎨 **What's Included**
-- **Rich CLI**: Beautiful terminal formatting with progress bars and panels
-- **Interactive Mode**: Guided configuration with real-time validation
-- **Multiple Export Formats**: CSV, JSON, Excel, Parquet, SQLite
-- **Database Connectivity**: Direct export to PostgreSQL, MySQL, MariaDB, SQLite
-- **Real-Time Streaming**: Live data streaming with multiple output formats
-
-### 🧪 **Verify Installation**
-
-```bash
-# Check system overview
-aus-pos-gen info
-
-# Experience interactive mode
-aus-pos-gen interactive
-```
-
----
-
-## 🎯 **Quick Start - Experience the Beauty!**
-
-### ✨ **Watch the Magic in Action**
-
-**Generate with Beautiful Progress Bars:**
-```bash
-# 🌟 Experience the stunning CLI with live progress bars
-aus-pos-gen generate --businesses 3 --customers 50 --days 7 --format csv
-
-# 🎨 You'll see:
-# • Beautiful welcome panel with configuration summary
-# • Real-time progress bars for each generation step
-# • Animated spinners and status indicators
-# • Rich tables with emojis and colors
-# • Success panel with completion summary
-```
-
-**Interactive Mode - Step-by-Step Wizard:**
-```bash
-# 🎮 Guided experience with real-time validation
-aus-pos-gen interactive
-
-# 🎯 Features:
-# • Step-by-step configuration with helpful prompts
-# • Smart defaults and input validation
-# • Clear explanations for each option
-# • Beautiful panels and colored output
-```
-
-### 📊 **Sample Output - What You'll See**
-
-**Beautiful Info Command:**
-```
-╭───────────────────── 🚀 System Overview ──────────────────────╮
-│                                                              │
-│  🇦🇺 Australian POS Data Generator                            │
-│  Professional Synthetic Data for Australian Retail Analytics │
-│                                                              │
-│  Version: 0.1.0  Status: ✅ Active                           │
-│  Seed: 42  Start Date: 2025-08-24                           │
-│  Payment Methods: 9 supported  GST Rate: 10.0%             │
-│                                                              │
-╰───────────────────────────────────────────────────────────────╯
-
-✨ Core Features Table with 6 features in colored rows...
-📤 Export Formats Table with 5 formats...
-💡 Usage Examples Panel with syntax highlighting...
-📈 System Stats Panel with quick facts...
-```
-
-**Enhanced Generate Command:**
-```
-╭─────────── 🚀 Data Generation Started ───────────╮
-│                                                  │
-│  🇦🇺 Australian POS Data Generator                │
-│                                                  │
-│  📊 Businesses: 3  👥 Customers: 50  📅 Days: 7  │
-│  🎯 Format: CSV  🌱 Seed: 42                     │
-│                                                  │
-╰──────────────────────────────────────────────────╯
-
-⠋ Generating data...          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0% -:--:--
-
-  🏪 Generating businesses... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
-  👥 Generating customers...  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
-  💳 Generating complete dataset... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
-
-📊 Generation Summary Table with emojis and colors...
-
-✅ Success Panel with completion message...
-```
-
-### 🚀 **Popular Commands**
-
-```bash
-# 🎯 Quick generation with beautiful output
-aus-pos-gen generate --businesses 5 --customers 1000 --days 30
-
-# 📊 Large dataset for analytics testing
-aus-pos-gen generate --businesses 10 --customers 5000 --days 365 --format parquet
-
-# 💾 Database-ready export
-aus-pos-gen generate --format sqlite --days 180 --businesses 15
-
-# 🌊 Stream live data for testing
-aus-pos-gen stream --rate 2.0 --format json --duration 60
-
-# 🎨 Interactive mode for beginners
-aus-pos-gen interactive
-
-# 📋 View all available commands beautifully
-aus-pos-gen --help
-```
-
----
-
-## 📤 **Export Formats - Enterprise Ready**
-
-### 🎯 **Supported Formats with Live Progress**
-
-| Format | Extension | Description | Best For | Progress |
-|--------|-----------|-------------|----------|----------|
-| **CSV** | `.csv` | Comma-separated values with headers | Excel analysis, basic data processing | ✅ |
-| **JSON** | `.json` | Structured JSON with nested data | API integration, web applications | ✅ |
-| **Excel** | `.xlsx` | Multi-sheet Excel workbook | Business reporting, presentations | ✅ |
-| **Parquet** | `.parquet` | Columnar storage format | Big data analytics, data lakes | ✅ |
-| **SQLite** | `.db` | Relational database file | Complex queries, data relationships | ✅ |
-
-### 🚀 **Format Selection with Beautiful Progress**
-
-```bash
-# 📊 Excel workbook with live progress bars
-aus-pos-gen generate --format xlsx --businesses 5
-
-# 🏗️ Parquet for big data processing
-aus-pos-gen generate --format parquet --days 365 --customers 5000
-
-# 🗄️ SQLite database with all relationships
-aus-pos-gen generate --format sqlite --businesses 10 --days 180
-
-# 🌐 JSON for API integration
-aus-pos-gen generate --format json --days 30
-```
-
-### 💡 **Format Recommendations**
-
-**For Data Science & Analytics:**
-```bash
-aus-pos-gen generate --format parquet --days 365 --customers 10000
-# → Optimized for big data processing, column-oriented storage
-```
-
-**For Business Reporting:**
-```bash
-aus-pos-gen generate --format xlsx --businesses 10 --days 90
-# → Multi-sheet Excel with charts and formatting ready
-```
-
-**For API Development:**
-```bash
-aus-pos-gen generate --format json --days 30 --businesses 5
-# → Structured JSON perfect for API testing and web apps
-```
-
-**For Database Integration:**
-```bash
-aus-pos-gen generate --format sqlite --days 180 --customers 5000
-# → Ready-to-query SQLite database with proper relationships
-```
-
----
-
-## 🗄️ **Direct Database Connectivity**
-
-**Export data directly to PostgreSQL, MySQL, MariaDB, and SQLite databases with full CLI integration!**
-
-### 🚀 **Database Export Features**
-
-- **Direct Connection**: Export data directly to external databases without intermediate files
-- **Multiple Database Support**: PostgreSQL, MySQL, MariaDB, and SQLite
-- **Automatic Table Creation**: Schema generation with proper data types and constraints
-- **Connection Pooling**: Efficient connection management for large datasets
-- **Error Handling**: Comprehensive error handling with detailed logging
-- **Table Prefixes**: Organize tables with custom prefixes (e.g., `aus_businesses`)
-- **Schema Support**: PostgreSQL schema support for multi-tenant applications
-
-### 📊 **Database Connection Options**
-
-| Option | Description | Example |
-|--------|-------------|---------|
-| `--db-type` | Database type | `postgresql`, `mysql`, `mariadb`, `sqlite` |
-| `--db-host` | Database host | `localhost`, `192.168.1.100` |
-| `--db-port` | Database port | `5432` (PostgreSQL), `3306` (MySQL) |
-| `--db-name` | Database name | `aus_pos_data` |
-| `--db-username` | Database username | `postgres`, `root` |
-| `--db-password` | Database password | `your_password` |
-| `--db-connection-string` | Full connection string | `postgresql://user:pass@host:5432/db` |
-| `--db-table-prefix` | Table prefix | `aus_`, `pos_` |
-| `--db-schema` | Database schema | `public` (PostgreSQL only) |
-
-### 🏗️ **Database Export Examples**
-
-#### **PostgreSQL Export**
-```bash
-# Export to PostgreSQL with individual parameters
-aus-pos-gen generate --businesses 5 --customers 1000 --days 30 \
-  --db-type postgresql \
-  --db-host localhost \
-  --db-port 5432 \
-  --db-name aus_pos_data \
-  --db-username postgres \
-  --db-password mypassword \
-  --db-schema public \
-  --db-table-prefix aus_
-
-# Export to PostgreSQL with connection string
-aus-pos-gen generate --businesses 5 --customers 1000 --days 30 \
-  --db-connection-string "postgresql://postgres:mypassword@localhost:5432/aus_pos_data"
-```
-
-#### **MySQL/MariaDB Export**
-```bash
-# Export to MySQL
-aus-pos-gen generate --businesses 10 --customers 5000 --days 90 \
-  --db-type mysql \
-  --db-host 192.168.1.100 \
-  --db-port 3306 \
-  --db-name retail_data \
-  --db-username admin \
-  --db-password securepass \
-  --db-table-prefix pos_
-
-# Export to MariaDB
-aus-pos-gen generate --businesses 5 --customers 2000 --days 60 \
-  --db-type mariadb \
-  --db-host mariadb.example.com \
-  --db-name sales_data \
-  --db-username dbuser \
-  --db-password dbpass
-```
-
-#### **SQLite Export**
-```bash
-# Export to SQLite file with direct connection
-aus-pos-gen generate --businesses 3 --customers 500 --days 30 \
-  --db-type sqlite \
-  --db-name ./data/aus_pos_live.db
-
-# Traditional SQLite file export (still supported)
-aus-pos-gen generate --format sqlite --businesses 3 --customers 500 --days 30
-```
-
-### 📋 **Database Schema Overview**
-
-When exporting to databases, the following tables are automatically created:
-
-#### **Core Tables**
-- `businesses` / `aus_businesses` - Business information with ABN validation
-- `customers` / `aus_customers` - Customer demographics and contact details
-- `transactions` / `aus_transactions` - Transaction headers with JSON item data
-- `transaction_items` / `aus_transaction_items` - Individual line items
-- `returns` / `aus_returns` - Return transactions and refund data
-
-#### **Table Structure Example**
-```sql
--- Businesses table
-CREATE TABLE aus_businesses (
-    store_id VARCHAR(10) PRIMARY KEY,
-    business_name VARCHAR(255),
-    abn VARCHAR(15),
-    trading_name VARCHAR(255),
-    store_address VARCHAR(255),
-    suburb VARCHAR(100),
-    state VARCHAR(5),
-    postcode VARCHAR(10),
-    phone VARCHAR(20),
-    email VARCHAR(255),
-    gst_registered BOOLEAN,
-    pos_system_type VARCHAR(50),
-    terminal_count INTEGER
-);
-
--- Transactions table with JSON items
-CREATE TABLE aus_transactions (
-    transaction_id VARCHAR(30) PRIMARY KEY,
-    store_id VARCHAR(10),
-    workstation_id VARCHAR(10),
-    employee_id VARCHAR(10),
-    transaction_type VARCHAR(20),
-    business_day_date TIMESTAMP,
-    transaction_datetime TIMESTAMP,
-    sequence_number INTEGER,
-    receipt_number VARCHAR(20),
-    customer_id VARCHAR(20),
-    subtotal_ex_gst DECIMAL(10,2),
-    gst_amount DECIMAL(10,2),
-    total_inc_gst DECIMAL(10,2),
-    payment_method VARCHAR(30),
-    tender_amount DECIMAL(10,2),
-    change_amount DECIMAL(10,2),
-    currency_code VARCHAR(5),
-    operator_id VARCHAR(10),
-    shift_id VARCHAR(10),
-    business_abn VARCHAR(15),
-    items JSON  -- PostgreSQL JSON, MySQL JSON, SQLite TEXT
-);
-```
-
-### 🔧 **Database Prerequisites**
-
-#### **PostgreSQL Setup**
-```bash
-# Install PostgreSQL
-sudo apt-get install postgresql postgresql-contrib
-
-# Create database and user
-sudo -u postgres psql
-CREATE DATABASE aus_pos_data;
-CREATE USER aus_pos_user WITH PASSWORD 'secure_password';
-GRANT ALL PRIVILEGES ON DATABASE aus_pos_data TO aus_pos_user;
-```
-
-#### **MySQL/MariaDB Setup**
-```bash
-# Install MySQL
-sudo apt-get install mysql-server
-
-# Create database and user
-mysql -u root -p
-CREATE DATABASE aus_pos_data;
-CREATE USER 'aus_pos_user'@'%' IDENTIFIED BY 'secure_password';
-GRANT ALL PRIVILEGES ON aus_pos_data.* TO 'aus_pos_user'@'%';
-FLUSH PRIVILEGES;
-```
-
-### 🎯 **Use Cases for Database Export**
-
-#### **Production Data Pipeline**
-```bash
-# Export to production PostgreSQL database
-aus-pos-gen generate --businesses 50 --customers 100000 --days 365 \
-  --db-type postgresql \
-  --db-host prod-db.company.com \
-  --db-name aus_retail_prod \
-  --db-username etl_user \
-  --db-password secure_prod_password \
-  --db-schema retail
-```
-
-#### **Analytics Data Warehouse**
-```bash
-# Export to analytics MySQL data warehouse
-aus-pos-gen generate --businesses 100 --customers 500000 --days 730 \
-  --db-type mysql \
-  --db-host analytics.company.com \
-  --db-name retail_analytics \
-  --db-username analytics_user \
-  --db-password analytics_password \
-  --db-table-prefix dw_  # Data warehouse prefix
-```
-
-#### **Development Testing**
-```bash
-# Export to local PostgreSQL for development
-aus-pos-gen generate --businesses 5 --customers 1000 --days 30 \
-  --db-type postgresql \
-  --db-host localhost \
-  --db-name aus_pos_dev \
-  --db-username postgres \
-  --db-password dev_password
-```
-
-### 🚀 **Database vs File Export Comparison**
-
-| Feature | Database Export | File Export |
-|---------|----------------|-------------|
-| **Performance** | ⭐⭐⭐⭐⭐ (Direct connection) | ⭐⭐⭐⭐ (File I/O) |
-| **Scalability** | ⭐⭐⭐⭐⭐ (Handles millions of records) | ⭐⭐⭐ (Limited by memory) |
-| **Integration** | ⭐⭐⭐⭐⭐ (Direct database access) | ⭐⭐ (Import required) |
-| **Querying** | ⭐⭐⭐⭐⭐ (Native SQL queries) | ⭐⭐⭐ (External tools needed) |
-| **Setup** | ⭐⭐⭐ (Database required) | ⭐⭐⭐⭐⭐ (Just files) |
-| **Best For** | Production, analytics, integration | Development, demos, small datasets |
-
-### 🛡️ **Security & Best Practices**
-
-#### **Connection Security**
-- **SSL/TLS**: Use SSL connections for production databases
-- **Password Security**: Never hardcode passwords in scripts
-- **User Privileges**: Use dedicated database users with minimal permissions
-- **Network Security**: Use VPNs or SSH tunnels for remote connections
-
-#### **Environment Variables**
-```bash
-# Use environment variables for sensitive data
-export DB_PASSWORD="your_secure_password"
-export DB_HOST="prod-db.company.com"
-
-# Then use in commands
-aus-pos-gen generate --db-type postgresql \
-  --db-host $DB_HOST \
-  --db-password $DB_PASSWORD \
-  --db-name production_data
-```
-
-#### **Connection String Alternative**
-```bash
-# Use connection strings for complex configurations
-aus-pos-gen generate --db-connection-string "postgresql://user:pass@host:5432/db?sslmode=require"
-```
-
-### 📈 **Performance Tips**
-
-#### **For Large Datasets**
-```bash
-# Use connection pooling for large exports
-aus-pos-gen generate --businesses 100 --customers 1000000 --days 365 \
-  --db-type postgresql \
-  --db-host analytics.company.com \
-  --db-name big_data_warehouse \
-  --db-username etl_user \
-  --db-password secure_password
-```
-
-#### **Batch Processing**
-- **Automatic Batching**: Large datasets are automatically processed in batches
-- **Progress Tracking**: Real-time progress with Rich progress bars
-- **Error Recovery**: Failed batches can be retried individually
-
-#### **Index Optimization**
-```sql
--- Recommended indexes for query performance
-CREATE INDEX idx_transactions_date ON aus_transactions(business_day_date);
-CREATE INDEX idx_transactions_customer ON aus_transactions(customer_id);
-CREATE INDEX idx_transaction_items_txn ON aus_transaction_items(transaction_id);
-```
-
----
-
-## 🌊 **Live Data Streaming - Real-Time Testing**
-
-**Stream continuous Australian POS transaction data with multiple output formats and direct database connectivity!**
-
-### 🚀 **Streaming Formats Available**
-
-| Format | Description | Use Case |
-|--------|-------------|----------|
-| **Console** | Real-time colored terminal output | Monitoring, development, demos |
-| **JSON** | JSON Lines format to file or console | API testing, data pipelines, logging |
-| **CSV** | CSV format with headers | Excel analysis, spreadsheet integration |
-| **XLSX** | Excel workbook with multiple sheets | Business reporting, presentations |
-| **Parquet** | Columnar Parquet format | Big data analytics, data lakes |
-| **Database** | Direct database insertion | Live analytics, production systems |
-
-### 📊 **Streaming Examples**
-
-```bash
-# 🌊 Live console monitoring with beautiful output
-aus-pos-gen stream --format console --rate 2.0 --businesses 5
-
-# 📄 Stream to CSV for Excel analysis
-aus-pos-gen stream --format csv --output live_data.csv --rate 5.0 --duration 300
-
-# 📊 Stream to Excel for business reporting
-aus-pos-gen stream --format xlsx --output live_report.xlsx --rate 3.0 --duration 180
-
-# 🏗️ Stream to Parquet for big data processing
-aus-pos-gen stream --format parquet --output stream_data.parquet --rate 1.0 --duration 600
-
-# 🗄️ Stream directly to database (PostgreSQL, MySQL, SQLite)
-aus-pos-gen stream --format database --db-type postgresql --db-host localhost --db-name live_pos --rate 3.0
-```
-
-### 📺 **Console Monitoring - Always On!**
-
-All streaming formats now include **real-time console output** for monitoring:
-
-```bash
-# Even when streaming to files or databases, you'll see:
-19:11:26 62 328 588 424 → $511.10 (CONTACTLESS) (CSV)
-19:11:27 71 902 294 131 → $248.45 (CONTACTLESS) (DATABASE)
-19:11:28 62 328 588 424 → $1248.05 (EFTPOS) (PARQUET)
-```
-
-**What you'll see:**
-- ⏰ **Timestamp** - When the transaction was generated
-- 🏢 **Business ABN** - Which business processed the transaction
-- 💰 **Amount & Payment Method** - Transaction details
-- 📋 **Format Indicator** - Shows which format is being streamed to (CSV, XLSX, PARQUET, DATABASE)
-- 🌈 **Color-coded** - Different colors for easy visual parsing
-
-### 🎨 **What You'll See - Beautiful Streaming Output**
-
-```
-╭── 🚀 Live Data Streaming Started ──╮
-│                                    │
-│  🌊 Australian POS Data Streamer   │
-│  Real-time Transaction Streaming   │
-│                                    │
-│  📊 Rate: 2.0 transactions/second  │
-│  🏪 Businesses: 3                  │
-│  👥 Customers: 500                 │
-│  📋 Format: CONSOLE                │
-│  ⏱️  Duration: Infinite             │
-│  🌱 Seed: 42                       │
-│                                    │
-╰────────────────────────────────────╯
-
-18:52:31 47 687 014 626 → $89.00 (EFTPOS)
-18:52:32 62 328 588 424 → $133.10 (CASH)
-18:52:32 47 687 014 626 → $258.15 (CREDIT_CARD)
-18:52:33 71 902 294 131 → $303.65 (CONTACTLESS)
-```
-
-**Stream Summary:**
-```
-╭─── 📈 Streaming Results ───╮
-│                            │
-│  🎉 Stream Summary         │
-│                            │
-│  📊 Total Transactions: 8  │
-│  ⏱️  Duration: 4.0 seconds  │
-│  📈 Average Rate: 2.0 tps  │
-│  🎯 Target Rate: 2.0 tps   │
-│  📋 Format: CONSOLE        │
-│                            │
-╰────────────────────────────╯
-```
-
-### 🗄️ **Database Streaming Examples**
-
-```bash
-# Stream directly to SQLite database
-aus-pos-gen stream --format database --db-type sqlite --db-name live_stream.db --rate 2.0
-
-# Stream to PostgreSQL with connection string
-aus-pos-gen stream --format database \
-  --db-connection-string "postgresql://user:pass@localhost:5432/live_pos" \
-  --db-table-prefix live_ \
-  --rate 3.0
-
-# Stream to MySQL with individual parameters
-aus-pos-gen stream --format database \
-  --db-type mysql \
-  --db-host analytics.company.com \
-  --db-port 3306 \
-  --db-name streaming_pos \
-  --db-username analytics_user \
-  --db-password secure_password \
-  --rate 5.0
-```
-
-### 🎮 **Interactive Mode - Step-by-Step Wizard**
-
-**For users who prefer a guided experience:**
-
-```bash
-aus-pos-gen interactive
-```
-
-**Enhanced Interactive Features:**
-- **Step-by-step configuration** with beautiful panels
-- **Real-time input validation** with helpful error messages
-- **Smart defaults** for all parameters
-- **Clear explanations** for each option
-- **Multiple operation modes** (generate/stream/info)
-
-**Interactive Workflow:**
-1. **Choose Operation**: Generate data, stream data, or show info
-2. **Configure Parameters**: Businesses, customers, days, format, seed
-3. **Live Progress**: Watch beautiful progress bars during generation
-4. **Success Summary**: View detailed results with rich tables
-
----
-
-## 🏗️ **Project Structure**
-
-```
-aus-retail-data-gen/
-├── environment.yml          # Conda environment specification
-├── pyproject.toml           # Python project configuration
-├── README.md               # This file
-├── src/
-│   └── aus_pos_data_gen/    # Main package
-│       ├── __init__.py
-│       ├── cli.py          # Command-line interface with Rich UI
-│       ├── config.py       # Pydantic configuration models
-│       ├── generator.py    # Core data generation logic
-│       ├── models.py       # Pydantic data models
-│       └── validators.py   # Australian business validation
-├── scripts/                # Utility scripts
-│   ├── generate_sample_data.py
-│   └── test_db_connectivity.py
-└── tests/                  # Test suite
-    ├── __init__.py
-    └── test_validators.py
-```
-
-### 🏢 **Core Components**
-
-**Data Models (Pydantic):**
-```python
-class Transaction(BaseModel):
-    transaction_id: str
-    business_id: str
-    customer_id: Optional[str]
-    transaction_datetime: datetime
-    subtotal_ex_gst: Decimal
-    gst_amount: Decimal
-    total_inc_gst: Decimal
-    payment_method: PaymentMethod
-    items: List[TransactionItem]
-```
-
-**Generator Classes:**
-- `POSDataGenerator` - Main data generation orchestrator with progress tracking
-- `ABNValidator` - Australian Business Number validation
-- `GSTCalculator` - GST calculations with ATO compliance
-- `AustralianAddressValidator` - State/postcode validation
-
-### 🏪 **Australian Business Rules**
-
-**Receipt Requirements:**
-- Business name and ABN for transactions >$75
-- GST breakdown for tax invoices
-- Date, time, and item descriptions
-- Total price includes GST statement
-
-**Business Hours:**
-- Weekdays: 9:00 AM - 5:00 PM (typical)
-- Peak hours: 12:00 PM - 2:00 PM, 5:00 PM - 7:00 PM
-- Seasonal patterns with Q4 peaks
-
-**GST Compliance:**
-```
-GST Amount = (GST-Inclusive Price × 1) ÷ 11
-GST-Exclusive Price = GST-Inclusive Price - GST Amount
-```
-
----
-
-## 📊 **Data Structure & Schema**
-
-### Core Tables
-
-#### Transactions
-```csv
-transaction_id,store_id,workstation_id,employee_id,transaction_type,business_day_date,transaction_datetime,sequence_number,receipt_number,customer_id,subtotal_ex_gst,gst_amount,total_inc_gst,payment_method,tender_amount,change_amount,currency_code,operator_id,shift_id,business_abn
-TXN240824001,STR001,POS03,EMP001,SALE,2025-08-24,2025-08-24T14:32:15+10:00,1234,R240001234,CUST001,27.27,2.73,30.00,EFTPOS,30.00,0.00,AUD,EMP001,SHIFT001,"12 345 678 901"
-```
-
-#### Transaction Line Items
-```csv
-transaction_id,line_number,item_type,product_id,sku,barcode,product_name,category,brand,quantity,unit_price_ex_gst,unit_price_inc_gst,line_subtotal_ex_gst,line_gst_amount,line_total_inc_gst,gst_code,discount_amount,discount_type,promotion_id
-TXN240824001,1,SALE,PRD001,COFFEE-REG,9312345000001,"Regular Coffee","beverages","Local Roasters",2,4.09,4.50,8.18,0.82,9.00,GST,0.00,NONE,NULL
-```
-
-#### Businesses
-```csv
-store_id,business_name,abn,acn,trading_name,store_address,suburb,state,postcode,phone,email,gst_registered,pos_system_type,terminal_count
-STR001,"Sample Retail Pty Ltd","12 345 678 901",123456789,"Sample Trading","123 Collins Street","Melbourne","VIC","3000","(03) 9123 4567","sales@sample.com.au",true,"Square",3
-```
-
-#### Returns
-```csv
-return_id,original_transaction_id,original_receipt_number,return_date,return_time,return_reason_code,return_reason_description,returned_by_customer_id,processed_by_employee_id,refund_method,refund_amount,store_credit_issued,restocking_fee,condition_code,original_purchase_date
-RET240824001,TXN240820045,R240000987,2025-08-24,2025-08-24T15:45:00+10:00,WRONG_SIZE,"Wrong size - too small",CUST002,EMP003,EFTPOS,89.95,0.00,0.00,UNOPENED,2025-08-20
-```
-
----
-
-## 🔧 **Configuration & Customization**
-
-### Environment Variables
-```bash
-export AUS_POS_SEED=42
-export AUS_POS_OUTPUT_DIR=./data
-export AUS_POS_DEFAULT_BUSINESSES=5
-export AUS_POS_DEFAULT_CUSTOMERS=1000
-export AUS_POS_DEFAULT_DAYS=30
-```
-
-### Programmatic Configuration
-```python
-from aus_pos_data_gen.config import POSGeneratorConfig
-from aus_pos_data_gen.generator import POSDataGenerator
-
-config = POSGeneratorConfig(
-    seed=12345,
-    start_date=datetime.now() - timedelta(days=90),
-    end_date=datetime.now(),
-    output_dir=Path("./custom_data"),
-    business_name="Custom Retail Store"
-)
-
-generator = POSDataGenerator(config)
-data = generator.generate_all_data(
-    business_count=15,
-    customer_count=5000
-)
-```
-
----
-
-## 🧪 **Testing & Development**
-
-### Run Test Suite
-```bash
-# All tests with coverage
-pytest --cov=aus_pos_data_gen --cov-report=html
-
-# Specific test categories
-pytest tests/test_validators.py
-pytest tests/test_generator.py -v
-
-# Quick validation tests
-pytest tests/ -k "test_abn" -v
-```
-
-### Code Quality
-```bash
-# Format code
-black src/aus_pos_data_gen/
-
-# Sort imports
-isort src/aus_pos_data_gen/
-
-# Lint code
-flake8 src/aus_pos_data_gen/
-
-# Type checking
-mypy src/aus_pos_data_gen/
-```
-
-### Adding New Products
-```python
-# Add to generator.py product catalog
-self.product_catalog["new_product"] = {
-    "name": "Premium Wireless Headphones",
-    "category": "electronics",
-    "brand": "AudioTech",
-    "sku": "HEADPHONES-PREM",
-    "barcode": "9334567890130",
-    "unit_price": Decimal("199.95"),
-    "gst_code": GSTCode.GST,
-    "return_rate": 0.08  # 8% return rate
-}
-```
-
----
-
-## 🤝 **Contributing**
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Add tests for new functionality
-4. Ensure all tests pass: `pytest`
-5. Format code: `black src/aus_pos_data_gen/`
-6. Commit changes: `git commit -m 'Add amazing feature'`
-7. Push to branch: `git push origin feature/amazing-feature`
-8. Open a Pull Request
-
-### Development Setup
-```bash
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run pre-commit hooks
-pre-commit install
-
-# Run tests before committing
-pytest
-```
-
----
-
-## 📄 **License**
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 **Acknowledgments**
-
-- **Australian Taxation Office (ATO)** - For GST compliance guidelines
-- **Australian Retail Industry** - For business practice insights
-- **Rich** - Beautiful terminal formatting and progress bars
-- **Questionary** - Interactive CLI with real-time validation
-- **Pydantic** - Type-safe data models and validation
-- **SQLAlchemy** - Database connectivity and ORM
-- **Open-source Python Community** - For excellent libraries
-
----
-
-## 🎯 **Quick Reference**
-
-### Most Common Commands
-```bash
-# Quick start - generate data with progress bars
-aus-pos-gen generate --businesses 5 --days 30
-
-# Large dataset for analytics
-aus-pos-gen generate --businesses 20 --customers 10000 --days 365 --format parquet
-
-# Interactive guided setup
-aus-pos-gen interactive
-
-# Real-time streaming to console
-aus-pos-gen stream --format console --rate 2.0
-
-# Stream to CSV for Excel analysis
-aus-pos-gen stream --format csv --output data.csv --rate 5.0 --duration 300
-
-# Stream directly to database
-aus-pos-gen stream --format database --db-type sqlite --db-name live.db --rate 3.0
-
-# View system capabilities
-aus-pos-gen info
-```
-
-### CLI Help
-```bash
-aus-pos-gen --help           # Main help
-aus-pos-gen generate --help  # Generation options
-aus-pos-gen stream --help    # Streaming options
-aus-pos-gen info             # Beautiful system overview
-```
-
----
-
-**Disclaimer**: This tool generates synthetic data for testing and development purposes. It is not intended for actual business use without proper validation and compliance review.
+MIT License. See `pyproject.toml` for metadata.
