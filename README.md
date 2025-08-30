@@ -35,25 +35,27 @@ A comprehensive synthetic Australian Point-of-Sale (POS) transaction data genera
 
 ### Prerequisites
 - Python 3.11 or higher
-- pip or conda package manager
+- pip package manager
 
-### Quick Install
+### Step-by-Step Installation
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd aus-retail-data-gen
 
-# Install with pip
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install the package
 pip install -e .
 
-# Or create conda environment
-conda env create -f environment.yml
-conda activate aus-pos-data-gen
-pip install -e .
-```
-
-### Verify Installation
-```bash
+# Verify installation
 aus-pos-gen --help
 ```
 
@@ -211,8 +213,13 @@ return_id,original_transaction_id,customer_id,return_date,reason,refund_amount
 # Clone and setup
 git clone <repository-url>
 cd aus-retail-data-gen
-conda env create -f environment.yml
-conda activate aus-pos-data-gen
+
+# Create and activate virtual environment
+python -m venv venv
+# On Windows: venv\Scripts\activate
+# On macOS/Linux: source venv/bin/activate
+
+# Install with development dependencies
 pip install -e ".[dev]"
 ```
 

@@ -16,6 +16,17 @@ from typing import Optional
 import typer
 from loguru import logger
 from rich.console import Console
+
+# Force UTF-8 encoding for Windows
+if os.name == 'nt':
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    import codecs
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except (AttributeError, OSError):
+            pass
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -38,7 +49,7 @@ app = typer.Typer(
     add_completion=False,
 )
 
-console = Console()
+console = Console(force_terminal=True, legacy_windows=False)
 
 # Global cleanup registry for graceful shutdown
 _cleanup_handlers = []

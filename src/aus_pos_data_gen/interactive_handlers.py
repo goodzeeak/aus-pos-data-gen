@@ -4,15 +4,50 @@ Interactive wizard handlers for the Australian POS data generator.
 Provides step-by-step configuration with full navigation control.
 """
 
+import os
+import sys
+
+# Force UTF-8 encoding for Windows
+if os.name == 'nt':
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # Force compatibility with modern terminals on Windows
+    os.environ['TERM'] = 'xterm-256color'
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except (AttributeError, OSError):
+            pass
+
 import questionary
 from questionary import Separator
+
+# Patch questionary for Windows terminal compatibility
+def patch_questionary_for_windows():
+    """Patch questionary to work better with Windows terminals."""
+    if os.name == 'nt':
+        try:
+            from prompt_toolkit.input import create_input
+            from prompt_toolkit.output import create_output
+            
+            # Create compatible input/output for Windows
+            input_obj = create_input()
+            output_obj = create_output()
+            
+            # Monkey patch questionary's default settings
+            questionary.get_default_kbi_message = lambda: "Cancelled by user"
+            
+        except ImportError:
+            pass
+
+patch_questionary_for_windows()
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.align import Align
 from datetime import datetime, timedelta
 
-console = Console()
+console = Console(force_terminal=True, legacy_windows=False)
 
 
 def handle_ctrl_c_exit(result):
